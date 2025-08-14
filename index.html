@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Small Black Dog: Find My Sister</title>
+<title>V2 Sapphy</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   :root { --w:1920; --h:1080; }
@@ -14,18 +14,18 @@
     position: fixed; left:50%; transform:translateX(-50%);
     font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     color:#fff; text-shadow: 2px 2px 2px rgba(0,0,0,.85);
-    pointer-events:none; max-width: 85vw;
+    pointer-events:none; max-width: 88vw;
   }
-  #bubbleDog { position: fixed; display:none; font-size:24px; background:rgba(0,0,0,.45);
-               padding:8px 12px; border-radius:10px; }
-  #centerMsg { top: 48%; transform: translate(-50%,-50%); font-size: 46px; font-weight: 700;
+  #bubbleDog { position: fixed; display:none; font-size:26px; background:rgba(0,0,0,.5);
+               padding:10px 14px; border-radius:12px; }
+  #centerMsg { top: 48%; transform: translate(-50%,-50%); font-size: 50px; font-weight: 800;
                text-align:center; display:none; }
-  #tooltip { bottom:5%; background:rgba(0,0,0,.7); padding:8px 12px; border-radius:10px; font-size:20px; display:none; }
-  #endText { top:50%; transform:translate(-50%,-50%); font-size:48px; opacity:0; transition:opacity 2s; }
+  #tooltip { bottom:5%; background:rgba(0,0,0,.75); padding:10px 14px; border-radius:12px; font-size:22px; display:none; }
+  #endText { top:50%; transform:translate(-50%,-50%); font-size:52px; opacity:0; transition:opacity 2s; }
 
   #splashHelp { position: fixed; inset: 0; display:none; place-items:end center; padding:2rem; }
   #splashHelp .card{
-    background: rgba(0,0,0,.55); padding:14px 18px; border-radius:12px; line-height:1.45;
+    background: rgba(0,0,0,.55); padding:16px 20px; border-radius:14px; line-height:1.45;
     font: 18px system-ui; color:#fff; text-align:center;
   }
 
@@ -43,11 +43,13 @@
 <div id="centerMsg" class="ui"></div>
 <div id="tooltip" class="ui"></div>
 <div id="endText" class="ui">No more howling for Sapphy</div>
+
+<!-- Splash instructions -->
 <div id="splashHelp">
   <div class="card">
-    <div style="font-size:24px;margin-bottom:8px;">Small Black Dog: Find My Sister</div>
-    <div style="margin-bottom:6px;"><b>A / D</b> — Move • <b>S</b> — Sniff • <b>B</b> — Bark • <b>H</b> — Howl</div>
-    <div style="opacity:.9;">Press <b>SPACE</b> to start</div>
+    <div style="font-size:26px;margin-bottom:8px;">Small Black Dog: Find My Sister</div>
+    <div style="margin-bottom:8px;"><b>A / D</b> — Move • <b>S</b> — Sniff • <b>B</b> — Bark • <b>H</b> — Howl</div>
+    <div style="opacity:.95;">Press <b>SPACE</b> to start</div>
   </div>
 </div>
 
@@ -79,10 +81,17 @@ const centerMsg = document.getElementById('centerMsg');
 const tooltipEl = document.getElementById('tooltip');
 const endTextEl = document.getElementById('endText');
 const splashHelp = document.getElementById('splashHelp');
-function showCenter(text, ms=2000) { centerMsg.textContent = text; centerMsg.style.display='block'; if (ms) setTimeout(()=> centerMsg.style.display='none', ms); }
-function showTooltip(text, ms=2000) { tooltipEl.textContent = text; tooltipEl.style.display='block'; if (ms) setTimeout(()=> tooltipEl.style.display='none', ms); }
-// bubble near dog
-function showDogBubble(text, ms=1800) {
+
+function showCenter(text, ms=4000) { // longer duration
+  centerMsg.textContent = text; centerMsg.style.display='block';
+  if (ms) setTimeout(()=> centerMsg.style.display='none', ms);
+}
+function showTooltip(text, ms=4000) { // longer duration
+  tooltipEl.textContent = text; tooltipEl.style.display='block';
+  if (ms) setTimeout(()=> tooltipEl.style.display='none', ms);
+}
+// bubble near dog (longer by default)
+function showDogBubble(text, ms=3500) {
   bubbleDog.textContent = text;
   const r = canvas.getBoundingClientRect();
   const px = r.left + (dog.x + dog.w*0.5) * (r.width / W);
@@ -107,12 +116,13 @@ function loadImages(files, cb){
   let left = files.length; if (!left) return cb();
   files.forEach(name=>{
     const img = new Image();
-    img.onload = done; img.onerror = done; img.src = name; images[name]=img;
+    img.onload = done; img.onerror = (e)=>{ console.warn("Image failed:", name); done(); };
+    img.src = name; images[name]=img;
   });
   function done(){ if (--left===0) cb(); }
 }
 
-// Audio (BGM quieter than SFX)
+// Audio (BGM quiet; SFX loud)
 const sounds = {
   bgm: new Audio(encodeURI("BGMUSIC.mp3")),
   final: new Audio(encodeURI("final music.mp3")),
@@ -128,15 +138,15 @@ const sounds = {
   rain: new Audio(encodeURI("rain.wav"))
 };
 const MUSIC_BASE = 0.35; // much quieter music
-sounds.bgm.loop = true; sounds.bgm.volume = MUSIC_BASE; // ~35%
+sounds.bgm.loop = true; sounds.bgm.volume = MUSIC_BASE;
 sounds.final.loop = false;
 
 /* =========================
    Input
 ========================= */
 const keys = {};
-window.addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true );
-window.addEventListener('keyup',   e=> keys[e.key.toLowerCase()] = false );
+window.addEventListener('keydown', e=> { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup',   e=> { keys[e.key.toLowerCase()] = false; });
 
 /* =========================
    Game State
@@ -158,17 +168,17 @@ function duckBGM(dbDown, ms){
   const linear = Math.pow(10, dbDown/20); // dB -> linear
   const target = Math.max(0, Math.min(1, MUSIC_BASE * linear));
   sounds.bgm.volume = target;
-  setTimeout(()=> sounds.bgm.volume = MUSIC_BASE, (ms||350));
+  setTimeout(()=> sounds.bgm.volume = MUSIC_BASE, (ms||400));
 }
 function playSfx(snd, duckDb=-4, holdMs=null, volOverride=1.0){
   if (!snd) return;
   try {
-    snd.volume = volOverride; // make SFX loud
+    snd.volume = volOverride; // SFX at 100%
     snd.currentTime = 0;
-    const ms = holdMs ?? Math.max(200, (snd.duration||0.35)*1000);
-    duckBGM(duckDb, ms+350);
+    const ms = holdMs ?? Math.max(220, (snd.duration||0.4)*1000);
+    duckBGM(duckDb, ms+380);
     snd.play().catch(()=>{});
-  }catch{}
+  }catch(e){ console.warn("SFX error", e); }
 }
 function playBGM(){ if(!bgmPlaying){ sounds.bgm.play().then(()=>bgmPlaying=true).catch(()=>{}); } }
 function stopBGM(){ try{ sounds.bgm.pause(); bgmPlaying=false; }catch{} }
@@ -179,7 +189,7 @@ function stopBGM(){ try{ sounds.bgm.pause(); bgmPlaying=false; }catch{} }
 const introWrap = document.getElementById('introWrap');
 const introVid  = document.getElementById('introVid');
 
-function startSplash(){ scene="splash"; bg=images["splashscreen.png"]; splashHelp.style.display="grid"; draw(); }
+function startSplash(){ scene="splash"; bg=images["splashscreen.png"]; splashHelp.style.display="grid"; drawOnce(); }
 function startIntroVideo(){
   introWrap.style.display = "grid";
   introVid.currentTime = 0;
@@ -192,14 +202,14 @@ function startLevel1(){
   Object.assign(dog, { x:220,y:680,state:"sit",dir:1,walkFrame:0,walkTimer:0 });
   treatActive=autoSeek=autoRunOff=autoRunIn=false;
   sniffPresses=0; loopsDone=0; callDadCount=0;
-  showCenter("I can smell something good!", 1600);
-  showCenter("Press S to sniff for more treats", 2400);
+  showCenter("I can smell something good!", 4000);
+  showCenter("Press S to sniff for more treats", 4000);
 }
 function startLevel1_CallDad(){
   scene = "level1_call";
   callDadCount = 0;
-  showCenter("Sapphy wants to go outside", 2200);
-  showTooltip("Bark (B) or Howl (H) a few times", 2600);
+  showCenter("Sapphy wants to go outside", 4000);
+  showTooltip("Bark (B) or Howl (H) a few times", 4000);
 }
 function startLevel2(){
   scene = "level2";
@@ -207,8 +217,8 @@ function startLevel2(){
   try{ sounds.rain.pause(); }catch{}
   Object.assign(dog, { x:220,y:680,state:"sit",dir:1,walkFrame:0,walkTimer:0 });
   actionCountL2=0;
-  showCenter("Where is my favourite person, I should bark!", 2600);
-  showTooltip("Bark (B) or Howl (H) 8 times", 3000);
+  showCenter("Where is my favourite person, I should bark!", 4000);
+  showTooltip("Bark (B) or Howl (H) 8 times", 4000);
 }
 function startFinal(){
   scene = "final";
@@ -234,7 +244,7 @@ function pickupTreat(){
   treatActive=false; autoSeek=false;
   playSfx(sounds.pickup, -4, null, 1.0);
   autoRunOff = true;
-  setTimeout(()=> showDogBubble("I'll save this for later.", 1600), 220);
+  setTimeout(()=> showDogBubble("I'll save this for later.", 4000), 250);
 }
 
 /* =========================
@@ -255,7 +265,7 @@ function level1SniffUpdate(dt){
     sniffGate=true; dog.state="sniff";
     playSfx(Math.random()<0.5?sounds.sniff1:sounds.sniff2, -4, null, 1.0);
     sniffPresses++;
-    setTimeout(()=>{ sniffGate=false; dog.state="sit"; }, 220);
+    setTimeout(()=>{ sniffGate=false; dog.state="sit"; }, 260);
     if (sniffPresses>=3 && !treatActive){ sniffPresses=0; spawnTreatAwayFromDog(); }
   }
   // auto seek to treat
@@ -272,12 +282,12 @@ function level1SniffUpdate(dt){
     if (dog.x > W + 120) {
       autoRunOff=false; loopsDone++;
       if (loopsDone < 3) { dog.x = -260; dog.dir=1; autoRunIn=true; setWalk(true); }
-      else { setTimeout(()=> startLevel1_CallDad(), 350); }
+      else { setTimeout(()=> startLevel1_CallDad(), 400); }
     }
   }
   if (autoRunIn){
     dog.x += (520*dt);
-    if (dog.x >= 220){ autoRunIn=false; dog.state="sit"; showCenter("Press S to sniff for more treats", 2200); }
+    if (dog.x >= 220){ autoRunIn=false; dog.state="sit"; showCenter("Press S to sniff for more treats", 4000); }
   }
 }
 
@@ -291,26 +301,26 @@ function level1CallUpdate(dt){
   if (keys['b'] && !barkGate){
     barkGate=true; dog.state="howl";
     playSfx(sounds.bark, -4, 250, 1.0);
-    setTimeout(()=> dog.state="sit", 120);
-    callDadCount++; if (callDadCount<4) showCenter("I think dad heard that", 1000);
-    setTimeout(()=> barkGate=false, 160);
+    setTimeout(()=> dog.state="sit", 140);
+    callDadCount++; if (callDadCount<4) showCenter("I think dad heard that", 1200);
+    setTimeout(()=> barkGate=false, 180);
   }
   if (keys['h'] && !howlGate){
     howlGate=true; dog.state="howl";
     const h=(Math.random()<0.5)?sounds.howl1:sounds.howl2;
     playSfx(h, -8, 1600, 1.0);
-    callDadCount++; if (callDadCount<4) showCenter("I think dad heard that", 1000);
-    setTimeout(()=>{ howlGate=false; }, 500);
+    callDadCount++; if (callDadCount<4) showCenter("I think dad heard that", 1200);
+    setTimeout(()=>{ howlGate=false; }, 520);
   }
   if (callDadCount>=4){
     callDadCount=-999;
-    playSfx(sounds.letout, -8, 1400, 1.0);
-    setTimeout(()=> playSfx(sounds.dooropen, -6, 1000, 1.0), 400);
-    setTimeout(()=> { bg = images["lvl1dooropen.png"]; }, 700);
+    playSfx(sounds.letout, -8, 1500, 1.0);
+    setTimeout(()=> playSfx(sounds.dooropen, -6, 1100, 1.0), 420);
+    setTimeout(()=> { bg = images["lvl1dooropen.png"]; }, 760);
     setTimeout(()=>{
       try{ sounds.rain.loop=true; sounds.rain.volume=0.9; sounds.rain.currentTime=0; sounds.rain.play(); }catch{}
-      showCenter("Rain, I'm not going out there!", 2200);
-    }, 1000);
+      showCenter("Rain, I'm not going out there!", 4000);
+    }, 1100);
     setTimeout(()=>{
       setWalk(true); dog.dir=1;
       const run = setInterval(()=>{ dog.x += 40; }, 16);
@@ -318,7 +328,7 @@ function level1CallUpdate(dt){
         clearInterval(run);
         try{ sounds.rain.pause(); }catch{}
         startLevel2();
-      }, 1300);
+      }, 1500);
     }, 2200);
   }
 }
@@ -332,22 +342,22 @@ function level2Update(dt){
   // Bark/Howl 8 times
   if (keys['b'] && !barkGate){
     barkGate=true; dog.state="howl";
-    playSfx(sounds.bark, -4, 250, 1.0);
-    setTimeout(()=> dog.state="sit", 120);
-    actionCountL2++; showTooltip(`Keep going… (${actionCountL2}/8)`, 900);
-    setTimeout(()=> barkGate=false, 160);
+    playSfx(sounds.bark, -4, 280, 1.0);
+    setTimeout(()=> dog.state="sit", 140);
+    actionCountL2++; showTooltip(`Keep going… (${actionCountL2}/8)`, 1100);
+    setTimeout(()=> barkGate=false, 180);
   }
   if (keys['h'] && !howlGate){
     howlGate=true; dog.state="howl";
     const h=(Math.random()<0.5)?sounds.howl1:sounds.howl2;
     playSfx(h, -8, 1600, 1.0);
-    actionCountL2++; showTooltip(`Keep going… (${actionCountL2}/8)`, 1000);
-    setTimeout(()=>{ howlGate=false; }, 500);
+    actionCountL2++; showTooltip(`Keep going… (${actionCountL2}/8)`, 1200);
+    setTimeout(()=>{ howlGate=false; }, 520);
   }
   if (actionCountL2>=8){
     actionCountL2=-999;
-    setTimeout(()=> playSfx(sounds.dooropen, -6, 900, 1.0), 200);
-    setTimeout(()=> startFinal(), 500);
+    setTimeout(()=> playSfx(sounds.dooropen, -6, 1000, 1.0), 240);
+    setTimeout(()=> startFinal(), 600);
   }
 }
 
@@ -410,22 +420,21 @@ function loop(now){
 /* =========================
    Boot
 ========================= */
-const introWrap = document.getElementById('introWrap');
-const introVid  = document.getElementById('introVid');
-
-function draw(){ if (bg) ctx.drawImage(bg,0,0,W,H); }
+function drawOnce(){ if (bg) ctx.drawImage(bg,0,0,W,H); }
 
 loadImages(imageFiles, ()=>{
   scene = "splash";
   bg = images["splashscreen.png"];
   splashHelp.style.display = "grid";
-  draw(); requestAnimationFrame(loop);
+  drawOnce(); requestAnimationFrame(loop);
 
+  // SPACE starts: play BGM, show intro video, then Level 1
   window.addEventListener('keydown', e=>{
     if (e.code === "Space" && scene === "splash") {
       splashHelp.style.display = "none";
-      playBGM();               // user gesture → start bgm
-      // intro video (muted) under BGM
+      playBGM(); // user gesture → allow audio
+      const introWrap = document.getElementById('introWrap');
+      const introVid  = document.getElementById('introVid');
       introWrap.style.display = "grid";
       introVid.currentTime = 0;
       introVid.play().catch(()=>{});
