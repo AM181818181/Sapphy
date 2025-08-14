@@ -21,7 +21,7 @@
   #centerMsg { top: 48%; transform: translate(-50%,-50%); font-size: 50px; font-weight: 800;
                text-align:center; display:none; }
   #tooltip { bottom:5%; background:rgba(0,0,0,.75); padding:10px 14px; border-radius:12px; font-size:22px; display:none; }
-  #endText { top:50%; transform:translate(-50%,-50%); font-size:52px; opacity:0; transition:opacity 2s; }
+  #endText { top:8%; transform:translateX(-50%); font-size:48px; font-weight:800; display:none; }
 
   #splashHelp { position: fixed; inset: 0; display:none; place-items:end center; padding:2rem; }
   #splashHelp .card{
@@ -42,7 +42,7 @@
 <div id="bubbleDog" class="ui"></div>
 <div id="centerMsg" class="ui"></div>
 <div id="tooltip" class="ui"></div>
-<div id="endText" class="ui">No more howling for Sapphy</div>
+<div id="endText" class="ui">Finally, she's home!</div>
 
 <!-- Splash instructions -->
 <div id="splashHelp">
@@ -158,15 +158,15 @@ let treatActive=false, treatX=1200, treatY=820, treatImg="treat1.png";
 let sniffPresses=0, loopsDone=0;
 let autoSeek=false, autoRunOff=false, autoRunIn=false;
 let callDadCount=0, actionCountL2=0;
-let bgmPlaying=false, finalStartMs=0;
+let bgmPlaying=false;
 let sniffGate=false, barkGate=false, howlGate=false;
 
 /* =========================
-   Audio control + Exclusive SFX
+   Audio control + Exclusive VO (with music DIP not STOP)
 ========================= */
 function duckBGM(dbDown, ms){
   const linear = Math.pow(10, dbDown/20);
-  const target = Math.max(0, Math.min(1, MUSIC_BASE * linear));
+  const target = Math.max(0, Math.min(1, sounds.bgm.volume * linear));
   sounds.bgm.volume = target;
   setTimeout(()=> sounds.bgm.volume = MUSIC_BASE, (ms||400));
 }
@@ -181,11 +181,14 @@ function playSfx(snd, duckDb=-4, holdMs=null, volOverride=1.0){
     snd.play().catch(()=>{});
   }catch(e){ console.warn("SFX error", e); }
 }
-function playSfxExclusive(snd, after){
+/* NEW: exclusive VO that dips BGM to 10% instead of stopping */
+function playExclusiveVO(snd, after){
   if (!snd) return;
   sfxLock = true;
-  // pause everything else (including rain) and BGM
-  try{ sounds.bgm.pause(); }catch{}
+  // dip BGM to 10%
+  const restoreVol = MUSIC_BASE;
+  sounds.bgm.volume = 0.10;
+  // pause any other SFX currently playing (keep BGM going)
   try{ sounds.rain.pause(); }catch{}
   for (const k in sounds){
     if (sounds[k] !== snd && k!=='final' && k!=='bgm'){
@@ -196,9 +199,10 @@ function playSfxExclusive(snd, after){
     snd.volume = 1.0; snd.currentTime = 0; snd.play().catch(()=>{});
     snd.onended = ()=>{
       sfxLock = false;
+      sounds.bgm.volume = restoreVol; // restore quiet base
       if (typeof after === 'function') after();
     };
-  }catch(e){ sfxLock=false; if (typeof after==='function') after(); }
+  }catch(e){ sfxLock=false; sounds.bgm.volume = restoreVol; if (typeof after==='function') after(); }
 }
 function playBGM(){ if(!bgmPlaying){ sounds.bgm.play().then(()=>bgmPlaying=true).catch(()=>{}); } }
 function stopBGM(){ try{ sounds.bgm.pause(); bgmPlaying=false; }catch{} }
@@ -209,13 +213,6 @@ function stopBGM(){ try{ sounds.bgm.pause(); bgmPlaying=false; }catch{} }
 const introWrap = document.getElementById('introWrap');
 const introVid  = document.getElementById('introVid');
 
-function startSplash(){ scene="splash"; bg=images["splashscreen.png"]; splashHelp.style.display="grid"; drawOnce(); }
-function startIntroVideo(){
-  introWrap.style.display = "grid";
-  introVid.currentTime = 0;
-  introVid.play().catch(()=>{}); // muted, should autoplay
-  introVid.onended = ()=>{ introWrap.style.display="none"; startLevel1(); };
-}
 function startLevel1(){
   scene = "level1_sniff";
   bg = images["lvl1.png"];
@@ -237,15 +234,18 @@ function startLevel2(){
   try{ sounds.rain.pause(); }catch{}
   Object.assign(dog, { x:220,y:680,state:"sit",dir:1,walkFrame:0,walkTimer:0 });
   actionCountL2=0;
+  playBGM(); // ensure BGM continues in Level 2
   showCenter("Where is my favourite person, I should bark!", 4000);
   showTooltip("Bark (B) or Howl (H) 8 times", 4000);
 }
 function startFinal(){
+  // Final screen is the endpoint: show image immediately and stay there indefinitely
   scene = "final";
   stopBGM();
-  ctx.drawImage(images["finalscreen.png"],0,0,W,H); // show final image immediately
+  bg = images["finalscreen.png"];            // keep drawing this forever
   try{ sounds.final.currentTime=0; sounds.final.play(); }catch{}
-  finalStartMs = performance.now();
+  // show end text right away
+  endTextEl.style.display = 'block';
 }
 
 /* =========================
@@ -279,7 +279,6 @@ function level1SniffUpdate(dt){
     else if (dog.state==="walk") dog.state="sit";
     dog.x = Math.max(40, Math.min(W-500, dog.x));
   }
-  // sniff to spawn treat (3 presses)
   if (!sfxLock && keys['s'] && !sniffGate && canMove){
     sniffGate=true; dog.state="sniff";
     playSfx(Math.random()<0.5?sounds.sniff1:sounds.sniff2, -4, null, 1.0);
@@ -287,7 +286,6 @@ function level1SniffUpdate(dt){
     setTimeout(()=>{ sniffGate=false; dog.state="sit"; }, 260);
     if (sniffPresses>=3 && !treatActive){ sniffPresses=0; spawnTreatAwayFromDog(); }
   }
-  // auto seek to treat
   if (autoSeek && treatActive){
     const target = treatX - 80;
     const dir = (dog.x < target) ? 1 : -1;
@@ -295,7 +293,6 @@ function level1SniffUpdate(dt){
     dog.x += (300*dt) * dir;
     if ((dir>0 && dog.x >= target) || (dir<0 && dog.x <= target)) { dog.state="sit"; pickupTreat(); }
   }
-  // run off, then back in, then big message or go to call-dad
   if (autoRunOff){
     setWalk(true); dog.dir=1; dog.x += (480*dt);
     if (dog.x > W + 120) {
@@ -317,7 +314,6 @@ function level1CallUpdate(dt){
   else if (dog.state==="walk") dog.state="sit";
   dog.x = Math.max(40, Math.min(W-500, dog.x));
 
-  // Bark/Howl 4 times (blocked during exclusive VO)
   if (!sfxLock && keys['b'] && !barkGate){
     barkGate=true; dog.state="howl";
     playSfx(sounds.bark, -4, 280, 1.0);
@@ -333,22 +329,17 @@ function level1CallUpdate(dt){
     setTimeout(()=>{ howlGate=false; }, 520);
   }
 
-  // Success → EXCLUSIVE letoutvoice, then door/rain gag, then Level 2
+  // Success → EXCLUSIVE letoutvoice (BGM dips to 10%), then door/rain gag, then Level 2
   if (callDadCount>=4){
     callDadCount=-999;
-    playSfxExclusive(sounds.letout, ()=> {
-      // After VO finishes (silence guaranteed), continue sequence.
-      // Door open SFX (BGM still paused here)
+    playExclusiveVO(sounds.letout, ()=> {
       try{ sounds.dooropen.currentTime=0; sounds.dooropen.volume=1.0; sounds.dooropen.play(); }catch{}
       setTimeout(()=> { bg = images["lvl1dooropen.png"]; }, 300);
       setTimeout(()=>{
         try{ sounds.rain.loop=true; sounds.rain.volume=0.9; sounds.rain.currentTime=0; sounds.rain.play(); }catch{}
         showCenter("Rain, I'm not going out there!", 4000);
-        // Resume BGM quietly after the door/rain cue starts
-        setTimeout(()=> playBGM(), 300);
       }, 600);
       setTimeout(()=>{
-        // sprint off right
         setWalk(true); dog.dir=1;
         const run = setInterval(()=>{ dog.x += 40; }, 16);
         setTimeout(()=>{
@@ -367,7 +358,7 @@ function level2Update(dt){
   else if (keys['d']) { dog.x += speed; dog.dir= 1; setWalk(); }
   else if (dog.state==="walk") dog.state="sit";
   dog.x = Math.max(40, Math.min(W-500, dog.x));
-  // Bark/Howl 8 times
+
   if (!sfxLock && keys['b'] && !barkGate){
     barkGate=true; dog.state="howl";
     playSfx(sounds.bark, -4, 280, 1.0);
@@ -384,29 +375,12 @@ function level2Update(dt){
   }
   if (actionCountL2>=8){
     actionCountL2=-999;
-    // Immediately show final screen + start final music
-    startFinal();
+    startFinal(); // show final image now and stay there; play final music
   }
 }
 
 /* =========================
-   Final timing & fades
-========================= */
-function finalUpdate(){
-  const t = (performance.now() - finalStartMs) / 1000;
-  if (t>=30 && t<48){
-    const k = (t-30)/18;
-    ctx.fillStyle = `rgba(0,0,0,${k})`;
-    ctx.fillRect(0,0,W,H);
-  }
-  if (t>=48){
-    ctx.fillStyle = "#000"; ctx.fillRect(0,0,W,H);
-    endTextEl.style.opacity = 1;
-  }
-}
-
-/* =========================
-   Render
+   Render & Loop
 ========================= */
 function drawDog(){
   if (dog.state==="walk") {
@@ -427,9 +401,6 @@ function drawDog(){
 }
 function drawTreat(){ if (!treatActive) return; const img = images[treatImg]; if (img) ctx.drawImage(img, treatX, treatY, 140, 100); }
 
-/* =========================
-   Main Loop
-========================= */
 let last = performance.now();
 function loop(now){
   const dt = Math.min(0.033, (now-last)/1000); last = now;
@@ -438,9 +409,9 @@ function loop(now){
 
   if (scene==="splash") { /* splash bg + help card */ }
   else if (scene==="level1_sniff") { drawTreat(); drawDog(); level1SniffUpdate(dt); }
-  else if (scene==="level1_call") { drawDog(); level1CallUpdate(dt); }
-  else if (scene==="level2") { drawDog(); level2Update(dt); }
-  else if (scene==="final") { finalUpdate(); }
+  else if (scene==="level1_call")  { drawDog(); level1CallUpdate(dt); }
+  else if (scene==="level2")       { drawDog(); level2Update(dt); }
+  else if (scene==="final")        { /* finalscreen is drawn as bg forever; end text shown */ }
 
   requestAnimationFrame(loop);
 }
@@ -460,9 +431,7 @@ loadImages(imageFiles, ()=>{
   window.addEventListener('keydown', e=>{
     if (e.code === "Space" && scene === "splash") {
       splashHelp.style.display = "none";
-      // start quiet BGM (user gesture → allowed)
       sounds.bgm.currentTime = 0; playBGM();
-      // show intro video (muted) then Level 1
       const introWrap = document.getElementById('introWrap');
       const introVid  = document.getElementById('introVid');
       introWrap.style.display = "grid";
