@@ -1,53 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
 <title>Small Black Dog: Find My Sister</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: black;
-    overflow: hidden;
-  }
-  canvas {
-    display: block;
-    margin: 0 auto;
-    background: #000;
-  }
+  html, body { margin:0; padding:0; background:#000; overflow:hidden; }
+  canvas { display:block; margin:0 auto; background:#000; }
   #bubble, #tooltip, #endText {
-    position: absolute;
-    font-family: sans-serif;
-    font-size: 24px;
-    color: white;
-    text-shadow: 2px 2px 2px black;
-    padding: 8px 12px;
-    border-radius: 8px;
-    max-width: 50%;
-    text-align: center;
-    pointer-events: none;
+    position:absolute; left:50%; transform:translateX(-50%);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color:#fff; text-shadow:2px 2px 2px rgba(0,0,0,.75);
+    padding:8px 12px; border-radius:10px; max-width:70%; pointer-events:none;
   }
-  #bubble {
-    background: rgba(0,0,0,0.5);
-    top: 10%;
-    left: 50%;
-    transform: translateX(-50%);
-  }
-  #tooltip {
-    background: rgba(0,0,0,0.7);
-    bottom: 5%;
-    left: 50%;
-    transform: translateX(-50%);
-  }
-  #endText {
-    background: transparent;
-    font-size: 48px;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%,-50%);
-    opacity: 0;
-    transition: opacity 2s;
-  }
+  #bubble { top:10%; background:rgba(0,0,0,.45); font-size:24px; display:none; }
+  #tooltip { bottom:5%; background:rgba(0,0,0,.7); font-size:20px; display:none; }
+  #endText { top:50%; transform:translate(-50%,-50%); font-size:48px; opacity:0; transition:opacity 2s; }
 </style>
 </head>
 <body>
@@ -55,271 +23,279 @@
 <div id="bubble"></div>
 <div id="tooltip"></div>
 <div id="endText">No more howling for Sapphy</div>
+
 <script>
-/* ---------------------
-   GAME SETUP
---------------------- */
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const bubbleEl = document.getElementById('bubble');
-const tooltipEl = document.getElementById('tooltip');
-const endTextEl = document.getElementById('endText');
+/* ---------- basics ---------- */
+const W=1920,H=1080;
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const bubbleEl=document.getElementById('bubble');
+const tooltipEl=document.getElementById('tooltip');
+const endTextEl=document.getElementById('endText');
 
-function showBubble(text, duration=2000) {
-  bubbleEl.textContent = text;
-  bubbleEl.style.display = 'block';
-  if (duration) {
-    setTimeout(()=>bubbleEl.style.display = 'none', duration);
-  }
+function showBubble(text, ms=2000){
+  bubbleEl.textContent=text; bubbleEl.style.display='block';
+  if(ms) setTimeout(()=>bubbleEl.style.display='none', ms);
 }
-function showTooltip(text, duration=2000) {
-  tooltipEl.textContent = text;
-  tooltipEl.style.display = 'block';
-  if (duration) {
-    setTimeout(()=>tooltipEl.style.display = 'none', duration);
-  }
+function showTooltip(text, ms=2000){
+  tooltipEl.textContent=text; tooltipEl.style.display='block';
+  if(ms) setTimeout(()=>tooltipEl.style.display='none', ms);
 }
 
-/* ---------------------
-   ASSETS
---------------------- */
-const imgNames = [
+/* ---------- assets ---------- */
+// IMPORTANT: do NOT include videos here; only images
+const imageFiles=[
   "splashscreen.png","lvl1.png","lvl1dooropen.png","lvl2.png","finalscreen.png",
   "sit.png","walk1.png","walk2.png","walk3.png","sniff1.png","howl.png",
-  "treat1.png","treat2.png","introvideo.mp4"
+  "treat1.png","treat2.png"
 ];
-const images = {};
-function loadImages(names, cb) {
-  let loaded = 0;
-  names.forEach(n=>{
-    const img = new Image();
-    img.src = n;
-    img.onload = ()=>{ if (++loaded === names.length) cb(); }
-    images[n] = img;
+const images={};
+function loadImages(files, cb){
+  let remain=files.length;
+  if(remain===0) return cb();
+  files.forEach(name=>{
+    const img=new Image();
+    img.onload=done; img.onerror=(e)=>{console.warn("Image failed:",name,e); done();};
+    img.src = name; // relative path, exact case
+    images[name]=img;
   });
+  function done(){ if(--remain===0) cb(); }
 }
 
-const audioNames = {
-  bgm: "BGMUSIC.mp3",
-  final: "final music.mp3",
-  sniff1: "Sniff1.m4a",
-  sniff2: "sniff2.m4a",
-  bark: "bark1.m4a",
-  howl1: "howl1.m4a",
-  howl2: "howl2.m4a",
-  pickup: "treatpickup.m4a",
-  dooropen: "dooropen.wav",
-  knock: "door knock.wav",
-  letout: "letoutvoice.m4a",
-  rain: "rain.wav"
+// audio (spaces + case preserved)
+const sounds={
+  bgm:    new Audio(encodeURI("BGMUSIC.mp3")),
+  final:  new Audio(encodeURI("final music.mp3")),
+  sniff1: new Audio(encodeURI("Sniff1.m4a")),
+  sniff2: new Audio(encodeURI("sniff2.m4a")),
+  bark:   new Audio(encodeURI("bark1.m4a")),
+  howl1:  new Audio(encodeURI("howl1.m4a")),
+  howl2:  new Audio(encodeURI("howl2.m4a")),
+  pickup: new Audio(encodeURI("treatpickup.m4a")),
+  dooropen: new Audio(encodeURI("dooropen.wav")),
+  knock:    new Audio(encodeURI("door knock.wav")),
+  letout:   new Audio(encodeURI("letoutvoice.m4a")),
+  rain:     new Audio(encodeURI("rain.wav")),
 };
-const sounds = {};
-for (let k in audioNames) {
-  sounds[k] = new Audio(audioNames[k]);
+// defaults
+sounds.bgm.loop=true;  sounds.bgm.volume=0.7;
+sounds.final.loop=false;
+
+/* ---------- state ---------- */
+let scene="splash";
+let bg=null;
+let dogX=200, dogY=680;
+let dogState="sit";
+let treatsCollected=0;
+let sniffCount=0;
+let actionCount=0;
+let bgmPlaying=false;
+let finalStartMs=0;
+let inputCooldown=0;
+
+/* ---------- audio ducking ---------- */
+const MUSIC_BASE=0.7;
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function duckBGM(dbDown, ms){
+  // dbDown is negative (e.g., -8 dB). Convert roughly to linear: 10^(dB/20).
+  const linear = Math.pow(10, dbDown/20);
+  const target = clamp(MUSIC_BASE * linear, 0, 1);
+  const prev = sounds.bgm.volume;
+  sounds.bgm.volume = target;
+  setTimeout(()=>{ sounds.bgm.volume = MUSIC_BASE; }, ms||400);
 }
-
-/* ---------------------
-   GAME STATE
---------------------- */
-let scene = "splash";
-let bg = images["splashscreen.png"];
-let dogX = 200, dogY = 700;
-let dogState = "sit";
-let walkFrame = 0, sniffFrame = 0, barkTimer = 0;
-let treatsCollected = 0;
-let sniffCount = 0;
-let actionCount = 0;
-let bgmPlaying = false;
-let rainPlaying = false;
-let startFinalTime = 0;
-
-/* ---------------------
-   AUDIO CONTROL
---------------------- */
-function playBGM() {
-  if (!bgmPlaying) {
-    sounds.bgm.loop = true;
-    sounds.bgm.volume = 0.7;
-    sounds.bgm.play();
-    bgmPlaying = true;
+function playSfx(snd, duckDb=-4, holdMs=null){
+  try{
+    if (!snd) return;
+    snd.currentTime=0;
+    const durMs = holdMs ?? Math.max(200, (snd.duration||0.4)*1000);
+    duckBGM(duckDb, durMs+350);
+    snd.play().catch(()=>{});
+  }catch(e){ console.warn("SFX error", e); }
+}
+function playBGM(){
+  if(!bgmPlaying){
+    sounds.bgm.play().then(()=>{ bgmPlaying=true; }).catch(()=>{ /* will start on next user input */ });
   }
 }
-function stopBGM() {
-  sounds.bgm.pause();
-  sounds.bgm.currentTime = 0;
-  bgmPlaying = false;
+function stopBGM(){ try{ sounds.bgm.pause(); bgmPlaying=false; }catch{} }
+
+/* ---------- input ---------- */
+const keys={};
+window.addEventListener('keydown',e=>{ keys[e.key.toLowerCase()]=true; });
+window.addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+/* ---------- scene helpers ---------- */
+function startLevel1(){
+  scene="level1";
+  bg=images["lvl1.png"];
+  dogX=220; dogState="sit";
+  treatsCollected=0; sniffCount=0;
+  showBubble("I can smell something good!", 2000);
+  showTooltip("Press S to sniff", 2200);
 }
-function duckBGM(amount, dur) {
-  const original = 0.7;
-  sounds.bgm.volume = original + amount;
-  setTimeout(()=>sounds.bgm.volume = original, dur);
+function startLevel2(){
+  // stop rain when transitioning
+  try{ sounds.rain.pause(); }catch{}
+  scene="level2";
+  bg=images["lvl2.png"];
+  dogX=220; dogState="sit";
+  actionCount=0;
+  showTooltip("Sniff (S) or Bark (B) to get their attention", 2600);
+}
+function startFinal(){
+  scene="final";
+  // swap music
+  stopBGM();
+  ctx.drawImage(images["finalscreen.png"],0,0,W,H);
+  try{ sounds.final.currentTime=0; sounds.final.play(); }catch{}
+  finalStartMs=performance.now();
 }
 
-/* ---------------------
-   INPUT
---------------------- */
-const keys = {};
-window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; });
-window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+/* ---------- level logic ---------- */
+let sniffGate=false, barkGate=false, howlGate=false; // simple key debouncers
 
-/* ---------------------
-   SCENE HANDLERS
---------------------- */
-function startLevel1() {
-  scene = "level1";
-  bg = images["lvl1.png"];
-  dogX = 200;
-  treatsCollected = 0;
-  sniffCount = 0;
-  showBubble("I can smell something good!",2000);
-  showTooltip("Press S to sniff",2000);
-}
-
-function handleLevel1() {
-  if (keys['s']) {
-    dogState = "sniff";
-    if (!sounds.sniff1.paused || !sounds.sniff2.paused) {} else {
-      const snd = (Math.random()<0.5)? sounds.sniff1 : sounds.sniff2;
-      duckBGM(-0.4, 500);
-      snd.play();
-      sniffCount++;
-      if (sniffCount >= 3) {
-        // spawn treat
-        sniffCount = 0;
-        treatsCollected++;
-        showBubble("I'll keep that for later",2000);
-        duckBGM(-0.4, 500);
-        sounds.pickup.play();
-        if (treatsCollected>=3) {
-          showTooltip("Press H to howl",3000);
-        }
+function handleLevel1(dt){
+  // Sniff to spawn/collect treats (instant collect per your simplified flow)
+  if(keys['s'] && !sniffGate){
+    sniffGate=true;
+    dogState="sniff";
+    playSfx( Math.random()<0.5 ? sounds.sniff1 : sounds.sniff2, -4 );
+    sniffCount++;
+    if(sniffCount>=3){
+      sniffCount=0;
+      treatsCollected++;
+      // pickup immediately (no sparkle or walking to treat)
+      playSfx(sounds.pickup, -4);
+      showBubble("I'll keep that for later.", 1800);
+      // small playful move forward
+      dogX = Math.min(dogX + 60, W-600);
+      if(treatsCollected<3){
+        setTimeout(()=>{
+          showBubble("I can smell something good!", 1800);
+          showTooltip("Press S to sniff", 2000);
+        }, 800);
+      }else{
+        setTimeout(()=>{ showTooltip("Press H to howl", 2400); }, 900);
       }
     }
+    setTimeout(()=>{ sniffGate=false; dogState="sit"; }, 220);
   }
-  if (treatsCollected>=3 && keys['h']) {
-    dogState = "howl";
-    const howlSnd = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
-    duckBGM(-0.8, howlSnd.duration*1000);
-    howlSnd.play();
+
+  // Door sequence after 3 treats
+  if(treatsCollected>=3 && keys['h'] && !howlGate){
+    howlGate=true;
+    dogState="howl";
+    const howl = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
+    playSfx(howl, -8, 1600);
+
+    // voice -> dooropen -> bg swap -> rain -> joke -> exit
+    setTimeout(()=> playSfx(sounds.letout, -8, 1200), 400);
     setTimeout(()=>{
-      duckBGM(-0.8, 1500);
-      sounds.letout.play();
-      setTimeout(()=>{
-        duckBGM(-0.6, 1500);
-        sounds.dooropen.play();
-        bg = images["lvl1dooropen.png"];
-        setTimeout(()=>{
-          sounds.rain.loop = true;
-          sounds.rain.volume = 0.8;
-          sounds.rain.play();
-          showBubble("It's raining out there... I'm not going out there",2000);
-          setTimeout(()=>startLevel2(),2000);
-        },500);
-      },400);
-    },500);
+      playSfx(sounds.dooropen, -6, 1000);
+      bg = images["lvl1dooropen.png"];
+    }, 750);
+    setTimeout(()=>{
+      try{ sounds.rain.loop=true; sounds.rain.volume=0.8; sounds.rain.currentTime=0; sounds.rain.play(); }catch{}
+      showBubble("It's raining out there... I'm not going out there.", 2200);
+    }, 1100);
+    setTimeout(()=>{
+      // run off screen (quick slide right), then transition
+      const slide = setInterval(()=>{ dogX += 40; }, 16);
+      setTimeout(()=>{ clearInterval(slide); startLevel2(); }, 1200);
+      howlGate=false; dogState="sit";
+    }, 2000);
   }
 }
 
-function startLevel2() {
-  scene = "level2";
-  bg = images["lvl2.png"];
-  dogX = 200;
-  actionCount = 0;
-  if (rainPlaying) { sounds.rain.pause(); rainPlaying = false; }
-}
-
-function handleLevel2() {
-  if (keys['s']) {
-    dogState = "sniff";
-    const snd = (Math.random()<0.5)? sounds.sniff1 : sounds.sniff2;
-    duckBGM(-0.4, 500);
-    snd.play();
+function handleLevel2(dt){
+  if(keys['s'] && !sniffGate){
+    sniffGate=true;
+    dogState="sniff";
+    playSfx( Math.random()<0.5 ? sounds.sniff1 : sounds.sniff2, -4 );
     actionCount++;
+    setTimeout(()=>{ sniffGate=false; dogState="sit"; }, 200);
   }
-  if (keys['b']) {
-    dogState = "bark";
-    duckBGM(-0.4, 500);
-    sounds.bark.play();
+  if(keys['b'] && !barkGate){
+    barkGate=true;
+    // bark anim = quick sit <-> howl flicker
+    dogState="howl";
+    playSfx(sounds.bark, -4, 250);
+    setTimeout(()=>{ dogState="sit"; }, 120);
     actionCount++;
+    setTimeout(()=>{ barkGate=false; }, 180);
   }
-  if (actionCount >= 5 && scene === "level2") {
-    duckBGM(-0.6, 1500);
-    sounds.knock.play();
-    showBubble("Someone's at the door!",2000);
-    showTooltip("It's my favourite person! Press H to howl",3000);
-    scene = "level2_knock";
-  }
-}
-
-function handleLevel2Knock() {
-  if (keys['h']) {
-    dogState = "howl";
-    const howlSnd = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
-    duckBGM(-0.8, howlSnd.duration*1000);
-    howlSnd.play();
-    setTimeout(()=>startFinal(),500);
+  if(actionCount>=5 && scene==="level2"){
+    playSfx(sounds.knock, -6, 1000);
+    showBubble("Someone's at the door!", 2000);
+    showTooltip("It's my favourite person! Press H to howl", 2600);
+    scene="level2_knock";
   }
 }
 
-function startFinal() {
-  scene = "final";
-  stopBGM();
-  ctx.drawImage(images["finalscreen.png"],0,0);
-  sounds.final.play();
-  startFinalTime = Date.now();
+function handleLevel2Knock(dt){
+  if(keys['h'] && !howlGate){
+    howlGate=true;
+    dogState="howl";
+    const howl = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
+    playSfx(howl, -8, 1600);
+    setTimeout(()=> startFinal(), 500);
+  }
 }
 
-function handleFinal() {
-  let t = (Date.now()-startFinalTime)/1000;
-  if (t>=30 && t<48) {
-    let fadeAmt = (t-30)/18;
-    ctx.fillStyle = `rgba(0,0,0,${fadeAmt})`;
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+function handleFinal(dt){
+  // draw finalscreen once (already drawn on enter)
+  const t = (performance.now()-finalStartMs)/1000; // seconds
+  if(t>=30 && t<48){
+    // fade to black over ~18s
+    const k = (t-30)/18;
+    ctx.fillStyle = `rgba(0,0,0,${k})`;
+    ctx.fillRect(0,0,W,H);
   }
-  if (t>=48) {
-    ctx.fillStyle = "black";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(t>=48){
+    ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
     endTextEl.style.opacity = 1;
   }
 }
 
-/* ---------------------
-   MAIN LOOP
---------------------- */
-function loop() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  if (bg) ctx.drawImage(bg,0,0,1920,1080);
-  if (scene==="level1"||scene==="level2"||scene==="level2_knock") {
-    // draw dog sprite
-    let img;
-    if (dogState==="sit") img = images["sit.png"];
-    else if (dogState==="walk") img = images["walk1.png"];
-    else if (dogState==="sniff") img = images["sniff1.png"];
-    else if (dogState==="howl") img = images["howl.png"];
-    else if (dogState==="bark") img = images["howl.png"];
-    ctx.drawImage(img,dogX,dogY,450,400);
+/* ---------- main loop ---------- */
+let last=performance.now();
+function frame(now){
+  const dt=(now-last)/1000; last=now;
+  // draw bg
+  if(bg) ctx.drawImage(bg,0,0,W,H); else { ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H); }
+  // draw dog during gameplay scenes
+  if(scene==="level1"||scene==="level2"||scene==="level2_knock"){
+    let sprite = images["sit.png"];
+    if(dogState==="sniff") sprite = images["sniff1.png"];
+    if(dogState==="howl") sprite = images["howl.png"];
+    // simple draw
+    ctx.drawImage(sprite, dogX, dogY, 450, 400);
   }
-  if (scene==="level1") handleLevel1();
-  if (scene==="level2") handleLevel2();
-  if (scene==="level2_knock") handleLevel2Knock();
-  if (scene==="final") handleFinal();
-  requestAnimationFrame(loop);
+  // per-scene updates
+  if(scene==="level1") handleLevel1(dt);
+  else if(scene==="level2") handleLevel2(dt);
+  else if(scene==="level2_knock") handleLevel2Knock(dt);
+  else if(scene==="final") handleFinal(dt);
+
+  requestAnimationFrame(frame);
 }
 
-/* ---------------------
-   START
---------------------- */
-loadImages(imgNames, ()=>{
-  // splash
-  ctx.drawImage(images["splashscreen.png"],0,0,1920,1080);
-  showTooltip("Press SPACE to start");
+/* ---------- boot ---------- */
+loadImages(imageFiles, ()=>{
+  // Splash
+  bg = images["splashscreen.png"];
+  ctx.drawImage(bg,0,0,W,H);
+  showTooltip("Press SPACE to start", 0); // no auto-hide
   window.addEventListener('keydown', e=>{
-    if (scene==="splash" && e.code==="Space") {
-      playBGM();
+    if(e.code==="Space" && scene==="splash"){
+      scene="level1";
+      playBGM(); // user gesture allows audio start
       startLevel1();
+      tooltipEl.style.display='none';
     }
   });
-  loop();
+  requestAnimationFrame(frame);
 });
 </script>
 </body>
