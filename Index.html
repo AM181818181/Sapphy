@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Small Black Dog: Find My Sister</title>
+<style>
+  html, body {
+    margin:0; padding:0; height:100%; background:#000; overflow:hidden; 
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  }
+  canvas { display:block; width:100vw; height:100vh; background:#000; }
+  /* UI overlays */
+  #ui, #splash, #finalFade, #endText {
+    position:fixed; inset:0; pointer-events:none;
+  }
+  #splash {
+    display:flex; align-items:center; justify-content:center; 
+    background:rgba(0,0,0,1);
+  }
+  #splashInner {
+    pointer-events:auto; text-align:center; color:#fff; padding:24px;
+  }
+  #splashInner img { max-width: min(90vw, 1280px); height:auto; display:block; margin:0 auto 16px; }
+  .card {
+    display:inline-block; background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.2);
+    border-radius:16px; padding:14px 16px; margin-top:8px;
+  }
+  .controls { font-size:clamp(14px,2vw,18px); line-height:1.5; }
+  .pressStart { margin-top:10px; opacity:.9; }
+  .pressKey { display:inline-block; background:#111; color:#fff; border-radius:8px; padding:4px 8px; border:1px solid #333; }
+  .tooltip {
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:6vh; color:#fff; background:rgba(0,0,0,.7);
+    padding:8px 12px; border-radius:10px; font-weight:600;
+    opacity:0; transition:opacity .2s ease;
+  }
+  .tooltip.show { opacity:1; }
+  .bubble {
+    position:absolute; max-width: 40ch; 
+    background:rgba(255,255,255,.96); border:2px solid #111; border-radius:12px;
+    padding:10px 12px; color:#111; font-weight:600; 
+    transform:translate(-50%, -100%) translateY(-10px); opacity:0;
+    transition: opacity .2s ease, transform .2s ease;
+    pointer-events:none;
+  }
+  .bubble::after {
+    content:''; position:absolute; left:50%; transform:translateX(-50%);
+    bottom:-14px; border:8px solid transparent; border-top-color:#111;
+  }
+  .bubble.show { opacity:1; transform:translate(-50%, -100%) translateY(0); }
+  #finalFade { background:#000; opacity:0; transition:opacity 18s linear; }
+  #endText {
+    display:flex; align-items:center; justify-content:center; 
+    color:#fff; font-size:clamp(22px,4vw,42px); letter-spacing:.3px;
+    opacity:0; transition:opacity 1.2s ease;
+  }
+  /* tiny HUD (optional) */
+  #hud {
+    position:fixed; left:12px; top:10px; color:#fff; 
+    font-size:14px; opacity:.75; pointer-events:none;
+  }
+  #hud span { margin-right:12px; }
+</style>
+</head>
+<body>
+
+<canvas id="game" width="1920" height="1080"></canvas>
+
+<!-- Splash overlay -->
+<div id="splash">
+  <div id="splashInner">
+    <img id="splashImg" alt="Splash" />
+    <div class="card controls">
+      <div><strong>Small Black Dog: Find My Sister</strong></div>
+      <div>A/D: move &nbsp;•&nbsp; S: sniff &nbsp;•&nbsp; B: bark &nbsp;•&nbsp; H: howl</div>
+      <div class="pressStart" style="margin-top:8px">Press <span class="pressKey">SPACE</span> to start</div>
+    </div>
+  </div>
+</div>
+
+<!-- Lightweight HUD -->
+<div id="hud" hidden>
+  <span id="hudLevel">Level 1</span>
+  <span id="hudTreats">Treats: 0</span>
+</div>
+
+<!-- In-game tooltip -->
+<div id="tooltip" class="tooltip">Press H to howl</div>
+
+<!-- Speech bubble -->
+<div id="bubble" class="bubble"></div>
+
+<!-- Final fade overlay -->
+<div id="finalFade"></div>
+<div id="endText">No more howling for Sapphy</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width, H = canvas.height;
+
+  function fitCanvas(){
+    // keep internal buffer 1920x1080, CSS scales to viewport (already full-screen)
+    // If you prefer true resizing, adjust W/H and redraw; not necessary here.
+  }
+  window.addEventListener('resize', fitCanvas);
+
+  // ------------- Asset loading -------------
+  const IMAGES = {
+    splash: 'splashscreen.png',
+    lvl1: 'lvl1.png',
+    lvl1open: 'lvl1dooropen.png',
+    lvl2: 'lvl2.png',
+    final: 'finalscreen.png',
+    sit: 'sit.png',
+    walk1: 'walk1.png',
+    walk2: 'walk2.png',
+    walk3: 'walk3.png',
+    sniff1: 'sniff1.png',
+    howl: 'howl.png',
+    treat1: 'treat1.png',
+    treat2: 'treat2.png'
+  };
+
+  const AUDIO = {
+    bgm: 'BGMUSIC.mp3',
+    final: 'final music.mp3',
+    sniff1: 'Sniff1.m4a', // note capital S – exact filename
+    sniff2: 'sniff2.m4a',
+    bark: 'bark1.m4a',
+    howl1: 'howl1.m4a',
+    howl2: 'howl2.m4a',
+    pickup: 'treatpickup.m4a',
+    doorOpen: 'dooropen.wav',
+    knock: 'door knock.wav',
+    letout: 'letoutvoice.m4a',
+    rain: 'rain.wav'
+  };
+
+  const img = {};
+  const sfx = {};
+  let bgmAudio = null;
+  let finalMusic = null;
+
+  function loadImage(src){
+    return new Promise((resolve, reject)=>{
+      const i = new Image();
+      i.onload = ()=> resolve(i);
+      i.onerror = reject;
+      i.src = src;
+    });
+  }
+
+  function loadAudio(src, loop=false){
+    const a = new Audio(src);
+    a.preload = 'auto';
+    a.loop = loop;
+    return a;
+  }
+
+  async function loadAll(){
+    // images
+    const keys = Object.keys(IMAGES);
+    await Promise.all(keys.map(async k=>{
+      img[k] = await loadImage(IMAGES[k]);
+    }));
+    // music
+    bgmAudio = loadAudio(AUDIO.bgm, true);
+    finalMusic = loadAudio(AUDIO.final, false);
+    // sfx
+    for (const [k,src] of Object.entries(AUDIO)){
+      if (k==='bgm' || k==='final') continue;
+      sfx[k] = loadAudio(src, k==='rain'); // rain loops
+    }
+  }
+
+  // ------------- Simple audio mixer + ducking -------------
+  // We'll keep bgm at ~0.7 base, SFX at ~0.9, and duck bgm by −8 dB (~0.4) or −4 dB (~0.63) with smooth fades.
+  const VOL = {
+    bgmBase: 0.7,
+    sfxBase: 0.9,
+    duckMinor: 0.63, // -4 dB approx
+    duckMajor: 0.4,  // -8 dB approx
+  };
+  let currentDuckTarget = VOL.bgmBase;
+  let duckActiveCount = 0;
+  let duckStrength = 0; // 0 none, 1 minor, 2 major
+
+  function setVolumeSmooth(audio, target, ms=120){
+    const start = audio.volume;
+    const t0 = performance.now();
+    function step(t){
+      const dt = Math.min(1, (t - t0)/ms);
+      audio.volume = start + (target - start)*dt;
+      if (dt < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function requestDuck(level){ // level: 1 minor, 2 major
+    duckActiveCount++;
+    if (level > duckStrength) duckStrength = level;
+    const target = (duckStrength===2) ? VOL.duckMajor : VOL.duckMinor;
+    currentDuckTarget = target;
+    if (bgmAudio) setVolumeSmooth(bgmAudio, target, 60);
+    // return release function
+    let released = false;
+    return function releaseDuck(){
+      if (released) return;
+      released = true;
+      duckActiveCount--;
+      if (duckActiveCount <= 0){
+        duckStrength = 0;
+        currentDuckTarget = VOL.bgmBase;
+        if (bgmAudio) setVolumeSmooth(bgmAudio, VOL.bgmBase, 400);
+      }
+    };
+  }
+
+  function playSfx(name, priority=false){
+    const a = sfx[name];
+    if (!a) return;
+    try { a.currentTime = 0; } catch(e){}
+    a.volume = VOL.sfxBase;
+    const release = requestDuck(priority ? 2 : 1);
+    a.onended = ()=> setTimeout(release, 0);
+    a.play().catch(()=>{ /* autoplay gating is handled by starting BGM on SPACE */ });
+    return a;
+  }
+
+  // ------------- Game state -------------
+  const STATE = { SPLASH:0, L1:1, L2:2, FINAL:3, END:4 };
+  let state = STATE.SPLASH;
+
+  const hud = {
+    el: document.getElementById('hud'),
+    level: document.getElementById('hudLevel'),
+    treats: document.getElementById('hudTreats'),
+  };
+  const tooltip = document.getElementById('tooltip');
+  const bubble = document.getElementById('bubble');
+  const splash = document.getElementById('splash');
+  const splashImg = document.getElementById('splashImg');
+  splashImg.src = IMAGES.splash;
+
+  const finalFade = document.getElementById('finalFade');
+  const endText = document.getElementById('endText');
+
+  // Player/dog
+  const dog = {
+    x: 240, y: 860, w: 450, h: 400,
+    vx: 0,
+    facing: 1, // 1 right, -1 left
+    anim: 'idle', // idle, walk, sniff, howl, bark
+    frameTime: 0,
+    frameIndex: 0,
+    actionLock: 0, // ms remaining where input is ignored (e.g., while howling)
+  };
+
+  // Level data
+  let bgImage = img.lvl1;
+  let treats = [];
+  let treatsCollected = 0;
+
+  // Input
+  const keys = { left:false, right:false, sniff:false, bark:false, howl:false };
+  window.addEventListener('keydown', (e)=>{
+    if (e.repeat) return;
+    if (state===STATE.SPLASH && e.code==='Space'){
+      startGame();
+      return;
+    }
+    if (state===STATE.END) return;
+
+    if (e.code==='KeyA') keys.left = true;
+    if (e.code==='KeyD') keys.right = true;
+    if (e.code==='KeyS') keys.sniff = true;
+    if (e.code==='KeyB') keys.bark = true;
+    if (e.code==='KeyH') keys.howl = true;
+  });
+  window.addEventListener('keyup', (e)=>{
+    if (e.code==='KeyA') keys.left = false;
+    if (e.code==='KeyD') keys.right = false;
+    if (e.code==='KeyS') keys.sniff = false;
+    if (e.code==='KeyB') keys.bark = false;
+    if (e.code==='KeyH') keys.howl = false;
+  });
+
+  // ------------- Scene control -------------
+
+  function startGame(){
+    splash.style.display = 'none';
+    // Start BGM (user gesture satisfied)
+    try {
+      bgmAudio.volume = VOL.bgmBase;
+      bgmAudio.play();
+    } catch (e) {}
+    startLevel1();
+  }
+
+  function startLevel1(){
+    state = STATE.L1;
+    bgImage = img.lvl1;
+    hud.el.hidden = false;
+    hud.level.textContent = 'Level 1';
+    treatsCollected = 0;
+    hud.treats.textContent = 'Treats: '+treatsCollected;
+    dog.x = 220; dog.y = 860; dog.facing = 1;
+    sniffLoopCount = 0;
+    l1_cycle = 0;
+    l1_spawnReady = true;
+    l1_doorOpened = false;
+    l1_phase = 'intro';
+    showBubbleCentered('I can smell something good!', 1800);
+    showTooltip('Press S to sniff');
+  }
+
+  function startLevel2(){
+    state = STATE.L2;
+    bgImage = img.lvl2;
+    hud.level.textContent = 'Level 2';
+    treats = []; // no treats in level 2 by design
+    dog.x = W/2 - 100; dog.facing = 1;
+    l2_actions = 0;
+    l2_knocked = false;
+    hideTooltip();
+    showBubbleCentered('I can smell something good!', 1600);
+  }
+
+  function startFinal(){
+    state = STATE.FINAL;
+    hud.el.hidden = true;
+    hideTooltip(); hideBubble();
+    // Show final screen image and switch music
+    bgImage = img.final;
+    // Fade out BGM and start final music
+    try {
+      // Crossfade quickly
+      setVolumeSmooth(bgmAudio, 0.0, 800);
+      setTimeout(()=> { try { bgmAudio.pause(); } catch(e){} }, 900);
+    } catch(e){}
+    try {
+      finalMusic.currentTime = 0;
+      finalMusic.volume = 1.0;
+      finalMusic.play();
+    } catch(e){}
+
+    // At 30s -> start dual fade (music & screen) ~18s
+    setTimeout(()=>{
+      finalFade.style.transition = 'opacity 18s linear';
+      finalFade.style.opacity = '1';
+      // fade music down over ~18s to 0 by ~48s
+      const durationMs = 18000;
+      const startVol = 1.0;
+      const t0 = performance.now();
+      function fadeStep(t){
+        const dt = Math.min(1, (t - t0)/durationMs);
+        finalMusic.volume = startVol * (1 - dt);
+        if (dt < 1) requestAnimationFrame(fadeStep);
+      }
+      requestAnimationFrame(fadeStep);
+    }, 30000);
+
+    // At ~48–50s -> show end text and stop
+    setTimeout(()=>{
+      endText.style.opacity = '1';
+      state = STATE.END;
+      try { finalMusic.pause(); } catch(e){}
+    }, 49000);
+  }
+
+  // ------------- UI helpers -------------
+  let bubbleTimer = null;
+  function showTooltip(text){
+    tooltip.textContent = text;
+    tooltip.classList.add('show');
+  }
+  function hideTooltip(){ tooltip.classList.remove('show'); }
+
+  function showBubble(text, x, y, ms=1800){
+    bubble.textContent = text;
+    bubble.style.left = x+'px';
+    bubble.style.top = y+'px';
+    bubble.classList.add('show');
+    clearTimeout(bubbleTimer);
+    if (ms>0){
+      bubbleTimer = setTimeout(hideBubble, ms);
+    }
+  }
+  function showBubbleAboveDog(text, ms=1800){
+    const bx = (dog.x - cameraX) + dog.w/2;
+    const by = (dog.y - 60);
+    showBubble(text, bx, by, ms);
+  }
+  function showBubbleCentered(text, ms=1800){
+    const bx = W/2, by = H*0.28;
+    showBubble(text, bx, by, ms);
+  }
+  function hideBubble(){ bubble.classList.remove('show'); }
+
+  // ------------- Level 1 logic -------------
+  let sniffLoopCount = 0;
+  let l1_cycle = 0; // how many treats completed
+  let l1_spawnReady = true;
+  let l1_doorOpened = false;
+  let l1_phase = 'intro'; // intro, loop, toDoor, doorSeq, afterDoor
+
+  function spawnTreat(){
+    // Alternate treat sprite & place somewhere ahead
+    const sprite = (Math.random()<0.5) ? img.treat1 : img.treat2;
+    const x = Math.min(W-260, Math.max(260, dog.x + 300 + Math.random()*300));
+    const y = 900; // on floor
+    treats.push({x,y,w:sprite.width,h:sprite.height,img:sprite});
+  }
+
+  function collectTreat(t){
+    // remove
+    treats = treats.filter(tt=>tt!==t);
+    treatsCollected++;
+    hud.treats.textContent = 'Treats: '+treatsCollected;
+    playSfx('pickup', false);
+    showBubbleAboveDog("I'll keep that for later.", 1400);
+    // auto-run off screen briefly and come back
+    dog.actionLock = 900;
+    dog.anim = 'walk';
+    dog.vx = 380 * dog.facing;
+    setTimeout(()=>{
+      // exit + re-enter from same side
+      const exitDir = dog.facing;
+      // move off quickly
+      dog.vx = 800*exitDir;
+      setTimeout(()=>{
+        // re-enter
+        dog.vx = -800*exitDir;
+        setTimeout(()=>{
+          dog.vx = 0; dog.anim = 'idle'; dog.actionLock = 0;
+          // next cycle or go to door
+          l1_cycle++;
+          if (l1_cycle < 3){ // 2–3 loops; change here if you want exactly 2
+            sniffLoopCount = 0;
+            l1_spawnReady = true;
+            showBubbleCentered('I can smell something good!', 1600);
+            showTooltip('Press S to sniff');
+          } else {
+            // move toward door area
+            l1_phase = 'toDoor';
+            hideTooltip();
+            showBubbleCentered('Hmm… the door?', 1200);
+          }
+        }, 450);
+      }, 350);
+    }, 200);
+  }
+
+  // ------------- Level 2 logic -------------
+  let l2_actions = 0;
+  let l2_knocked = false;
+
+  // ------------- Camera (simple) -------------
+  let cameraX = 0;
+  function updateCamera(){
+    // Simple: keep dog roughly on screen; since background is single image,
+    // we clamp movement within canvas rather than scrolling world.
+    if (dog.x < 60) dog.x = 60;
+    if (dog.x > W - 510) dog.x = W - 510;
+    cameraX = 0; // no scrolling world
+  }
+
+  // ------------- Update & Draw loop -------------
+  let last = performance.now();
+  function tick(t){
+    const dt = Math.min(50, t - last); // ms
+    last = t;
+    update(dt/1000);
+    draw();
+    requestAnimationFrame(tick);
+  }
+
+  function update(dt){
+    // handle dog movement unless locked
+    if (dog.actionLock > 0){
+      dog.actionLock -= dt*1000;
+      if (dog.actionLock < 0) dog.actionLock = 0;
+    } else {
+      dog.vx = 0;
+      if (keys.left){ dog.vx = -300; dog.facing = -1; }
+      if (keys.right){ dog.vx = 300; dog.facing = 1; }
+
+      if (state===STATE.L1){
+        // input: sniff to spawn treat
+        if (keys.sniff){
+          // animate sniff & sound
+          dog.anim = 'sniff';
+          if (!sniffSoundGate){ sniffSoundGate = true; playSfx(Math.random()<0.5?'sniff1':'sniff2', false); setTimeout(()=>sniffSoundGate=false, 220); }
+          sniffHold += dt;
+          if (sniffHold > 0.22){ sniffHold = 0; sniffLoopCount++; }
+          if (l1_spawnReady && sniffLoopCount >= 3){
+            l1_spawnReady = false;
+            spawnTreat();
+            hideTooltip();
+          }
+        } else if (keys.howl && l1_phase!=='doorSeq' && l1_phase!=='afterDoor' && nearDoor()){
+          // door sequence only when at door and after loops
+          startDoorSequenceL1();
+        } else if (keys.bark){
+          doBark();
+        } else {
+          dog.anim = (dog.vx===0) ? 'idle' : 'walk';
+        }
+
+        // move dog
+        dog.x += dog.vx * dt;
+
+        // collect treat
+        for (const t of treats){
+          if (rectsOverlap(dog.x, dog.y- dog.h, dog.w, dog.h, t.x, t.y - t.h, t.w, t.h)){
+            collectTreat(t);
+            break;
+          }
+        }
+
+        // if phase 'toDoor', gently nudge player to right with prompt
+        if (l1_phase==='toDoor'){
+          showTooltip('Go to the door →   (H to howl)');
+          // allow howl only near the door
+        }
+
+      } else if (state===STATE.L2){
+        // mixed actions to trigger knock
+        if (!l2_knocked){
+          if (keys.sniff){
+            dog.anim = 'sniff';
+            if (!sniffSoundGate){ sniffSoundGate = true; playSfx(Math.random()<0.5?'sniff1':'sniff2', false); setTimeout(()=>sniffSoundGate=false, 220); }
+            actCountGate('sniff');
+          } else if (keys.bark){
+            doBark();
+            actCountGate('bark');
+          } else {
+            dog.anim = (dog.vx===0) ? 'idle' : 'walk';
+          }
+        } else {
+          // waiting for howl to open / finish
+          if (keys.howl){
+            doHowl(()=> {
+              // optional: play door open SFX again
+              playSfx('doorOpen', true);
+              startFinal();
+            });
+          } else if (keys.bark){
+            doBark();
+          } else if (keys.sniff){
+            dog.anim = 'sniff';
+            if (!sniffSoundGate){ sniffSoundGate = true; playSfx(Math.random()<0.5?'sniff1':'sniff2', false); setTimeout(()=>sniffSoundGate=false, 220); }
+          } else {
+            dog.anim = (dog.vx===0) ? 'idle' : 'walk';
+          }
+        }
+
+        dog.x += dog.vx * dt;
+      }
+    }
+
+    updateCamera();
+    // animate frames
+    dog.frameTime += dt;
+
+    // switch anim frames
+    switch(dog.anim){
+      case 'walk':
+        if (dog.frameTime > 0.12){ dog.frameTime = 0; dog.frameIndex = (dog.frameIndex+1)%3; }
+        break;
+      case 'sniff':
+        if (dog.frameTime > 0.16){ dog.frameTime = 0; dog.frameIndex = (dog.frameIndex+1)%2; }
+        break;
+      default:
+        dog.frameIndex = 0;
+        break;
+    }
+  }
+
+  function draw(){
+    // background
+    ctx.clearRect(0,0,W,H);
+    ctx.drawImage(bgImage, 0, 0, W, H);
+
+    // treats
+    for (const t of treats){
+      ctx.drawImage(t.img, t.x, t.y - t.h);
+    }
+
+    // dog sprite
+    let sprite = img.sit;
+    if (dog.anim==='walk'){
+      sprite = [img.walk1, img.walk2, img.walk3][dog.frameIndex];
+    } else if (dog.anim==='sniff'){
+      sprite = [img.sniff1, img.sniff1 /*re-using sniff1 visually while sfx alternates*/][ (dog.frameIndex%2) ];
+    } else if (dog.anim==='howl' || dog.anim==='bark'){
+      sprite = img.howl;
+    } else {
+      sprite = img.sit;
+    }
+
+    ctx.save();
+    ctx.translate(dog.x - cameraX + dog.w/2, dog.y - dog.h);
+    if (dog.facing===-1){ ctx.scale(-1,1); }
+    ctx.drawImage(sprite, -dog.w/2, 0, dog.w, dog.h);
+    ctx.restore();
+
+    // move bubble with dog if it's anchored above dog
+    if (bubble.classList.contains('show')){
+      // leave bubble where it is unless we want it to follow; we only reposition when we call showBubbleAboveDog
+    }
+  }
+
+  // ------------- Helpers -------------
+  function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh){
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  let sniffHold = 0;
+  let sniffSoundGate = false;
+
+  function doBark(){
+    if (dog.anim==='howl') return; // don't interrupt
+    dog.anim = 'bark';
+    // quick sit<->howl flicker simulated by using howl sprite; audio barks
+    if (!barkGate){
+      barkGate = true;
+      playSfx('bark', false);
+      setTimeout(()=>{ barkGate = false; }, 220);
+    }
+  }
+  let barkGate = false;
+
+  function doHowl(cb){
+    dog.anim = 'howl';
+    dog.actionLock = 2200; // rough lock; will adjust when we know clip length
+    const which = (Math.random()<0.5) ? 'howl1' : 'howl2';
+    const a = playSfx(which, true);
+    if (a){
+      // lock for the duration of the audio
+      dog.actionLock = Math.max(dog.actionLock, (a.duration||2.2)*1000);
+      a.onended = ()=>{
+        dog.anim = 'idle';
+        dog.actionLock = 0;
+        if (cb) cb();
+      };
+    } else {
+      setTimeout(()=>{ dog.anim='idle'; dog.actionLock=0; if (cb) cb(); }, 1800);
+    }
+  }
+
+  function nearDoor(){
+    // for Level 1, door is at far right; ask player to move right side
+    return dog.x > W - 520;
+  }
+
+  function startDoorSequenceL1(){
+    l1_phase = 'doorSeq';
+    hideTooltip();
+    doHowl(()=>{
+      // voice: "I'll let you out!"
+    });
+    setTimeout(()=> playSfx('letout', true), 400);
+    setTimeout(()=>{
+      playSfx('doorOpen', true);
+      // swap bg to open door
+      bgImage = img.lvl1open;
+    }, 800);
+    setTimeout(()=>{
+      // start rain loop quietly under BGM
+      playSfx('rain', true);
+    }, 1100);
+    setTimeout(()=>{
+      showBubbleAboveDog("It's raining out there... I'm not going out there.", 2000);
+      // run off and go to Level 2
+      dog.vx = -600; dog.facing = -1; dog.anim = 'walk'; dog.actionLock = 1800;
+      setTimeout(()=>{
+        // fade to black and stop rain
+        fadeToLevel2();
+      }, 1200);
+    }, 1400);
+  }
+
+  function fadeToLevel2(){
+    // Simple short fade using finalFade div with short transition
+    finalFade.style.transition = 'opacity .7s ease';
+    finalFade.style.opacity = '1';
+    try { sfx.rain.pause(); } catch(e){}
+    setTimeout(()=>{
+      finalFade.style.transition = 'opacity .6s ease';
+      finalFade.style.opacity = '0';
+      startLevel2();
+    }, 900);
+  }
+
+  function actCountGate(kind){
+    if (actGate) return;
+    actGate = true; setTimeout(()=> actGate=false, 180);
+    l2_actions++;
+    if (l2_actions>=5 && !l2_knocked){
+      l2_knocked = true;
+      playSfx('knock', true);
+      showBubbleAboveDog("Someone's at the door!", 1600);
+      setTimeout(()=> showTooltip("It's my favourite person! Press H to howl."), 800);
+    }
+  }
+  let actGate = false;
+
+  // ------------- Boot -------------
+  (async function boot(){
+    await loadAll();
+    // Fit canvas once
+    fitCanvas();
+    // set splash image src already set
+    requestAnimationFrame(tick);
+  })();
+
+})(); 
+</script>
+</body>
+</html>
