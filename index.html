@@ -21,7 +21,12 @@
   #centerMsg { top: 48%; transform: translate(-50%,-50%); font-size: 50px; font-weight: 800;
                text-align:center; display:none; }
   #tooltip { bottom:5%; background:rgba(0,0,0,.75); padding:10px 14px; border-radius:12px; font-size:22px; display:none; }
-  #endText { top:8%; transform:translateX(-50%); font-size:48px; font-weight:800; display:none; }
+
+  /* Final text: start invisible; fade in when we set opacity=1 a few seconds after final image shows */
+  #endText {
+    top: 8%; transform:translateX(-50%);
+    font-size:48px; font-weight:800; opacity:0; transition: opacity 1.4s ease;
+  }
 
   #splashHelp { position: fixed; inset: 0; display:none; place-items:end center; padding:2rem; }
   #splashHelp .card{
@@ -90,7 +95,6 @@ function showTooltip(text, ms=4000) {
   tooltipEl.textContent = text; tooltipEl.style.display='block';
   if (ms) setTimeout(()=> tooltipEl.style.display='none', ms);
 }
-// bubble near dog
 function showDogBubble(text, ms=3500) {
   bubbleDog.textContent = text;
   const r = canvas.getBoundingClientRect();
@@ -154,6 +158,8 @@ window.addEventListener('keyup',   e=> { keys[e.key.toLowerCase()] = false; });
 let scene = "splash";
 let bg = null;
 const dog = { x:220, y:680, w:450, h:400, state:"sit", dir:1, walkFrame:0, walkTimer:0, walkSpeed:0.1 };
+let drawDogFlag = true; // NEW: allow hiding dog during transitions
+
 let treatActive=false, treatX=1200, treatY=820, treatImg="treat1.png";
 let sniffPresses=0, loopsDone=0;
 let autoSeek=false, autoRunOff=false, autoRunIn=false;
@@ -162,7 +168,7 @@ let bgmPlaying=false;
 let sniffGate=false, barkGate=false, howlGate=false;
 
 /* =========================
-   Audio control + Exclusive VO (with music DIP not STOP)
+   Audio control + Exclusive VO (dip BGM to 10%)
 ========================= */
 function duckBGM(dbDown, ms){
   const linear = Math.pow(10, dbDown/20);
@@ -170,7 +176,7 @@ function duckBGM(dbDown, ms){
   sounds.bgm.volume = target;
   setTimeout(()=> sounds.bgm.volume = MUSIC_BASE, (ms||400));
 }
-let sfxLock = false; // blocks other SFX while true
+let sfxLock = false;
 function playSfx(snd, duckDb=-4, holdMs=null, volOverride=1.0){
   if (!snd || sfxLock) return;
   try {
@@ -181,14 +187,12 @@ function playSfx(snd, duckDb=-4, holdMs=null, volOverride=1.0){
     snd.play().catch(()=>{});
   }catch(e){ console.warn("SFX error", e); }
 }
-/* NEW: exclusive VO that dips BGM to 10% instead of stopping */
+/* VO exclusive: BGM dips to 10%, other SFX locked */
 function playExclusiveVO(snd, after){
   if (!snd) return;
   sfxLock = true;
-  // dip BGM to 10%
   const restoreVol = MUSIC_BASE;
-  sounds.bgm.volume = 0.10;
-  // pause any other SFX currently playing (keep BGM going)
+  sounds.bgm.volume = 0.10; // dip to 10%
   try{ sounds.rain.pause(); }catch{}
   for (const k in sounds){
     if (sounds[k] !== snd && k!=='final' && k!=='bgm'){
@@ -199,7 +203,7 @@ function playExclusiveVO(snd, after){
     snd.volume = 1.0; snd.currentTime = 0; snd.play().catch(()=>{});
     snd.onended = ()=>{
       sfxLock = false;
-      sounds.bgm.volume = restoreVol; // restore quiet base
+      sounds.bgm.volume = restoreVol;
       if (typeof after === 'function') after();
     };
   }catch(e){ sfxLock=false; sounds.bgm.volume = restoreVol; if (typeof after==='function') after(); }
@@ -217,6 +221,7 @@ function startLevel1(){
   scene = "level1_sniff";
   bg = images["lvl1.png"];
   Object.assign(dog, { x:220,y:680,state:"sit",dir:1,walkFrame:0,walkTimer:0 });
+  drawDogFlag = true;
   treatActive=autoSeek=autoRunOff=autoRunIn=false;
   sniffPresses=0; loopsDone=0; callDadCount=0;
   showCenter("I can smell something good!", 4000);
@@ -224,28 +229,28 @@ function startLevel1(){
 }
 function startLevel1_CallDad(){
   scene = "level1_call";
-  callDadCount = 0;
   showCenter("Sapphy wants to go outside", 4000);
   showTooltip("Bark (B) or Howl (H) a few times", 4000);
+  callDadCount = 0;
 }
 function startLevel2(){
   scene = "level2";
   bg = images["lvl2.png"];
   try{ sounds.rain.pause(); }catch{}
   Object.assign(dog, { x:220,y:680,state:"sit",dir:1,walkFrame:0,walkTimer:0 });
+  drawDogFlag = true; // show dog again in L2
   actionCountL2=0;
-  playBGM(); // ensure BGM continues in Level 2
+  playBGM();
   showCenter("Where is my favourite person, I should bark!", 4000);
   showTooltip("Bark (B) or Howl (H) 8 times", 4000);
 }
 function startFinal(){
-  // Final screen is the endpoint: show image immediately and stay there indefinitely
   scene = "final";
   stopBGM();
-  bg = images["finalscreen.png"];            // keep drawing this forever
+  bg = images["finalscreen.png"];   // fully cover canvas each frame
+  // fade-in end text after 3s
+  setTimeout(()=>{ endTextEl.style.opacity = 1; }, 3000);
   try{ sounds.final.currentTime=0; sounds.final.play(); }catch{}
-  // show end text right away
-  endTextEl.style.display = 'block';
 }
 
 /* =========================
@@ -297,8 +302,16 @@ function level1SniffUpdate(dt){
     setWalk(true); dog.dir=1; dog.x += (480*dt);
     if (dog.x > W + 120) {
       autoRunOff=false; loopsDone++;
-      if (loopsDone < 3) { dog.x = -260; dog.dir=1; autoRunIn=true; setWalk(true); }
-      else { setTimeout(()=> startLevel1_CallDad(), 400); }
+      // hide dog until the next loop or phase to avoid corner “flash”
+      drawDogFlag = false;
+      if (loopsDone < 3) {
+        // run back in from the left (visible again)
+        dog.x = -260; dog.dir=1; autoRunIn=true; setWalk(true);
+        drawDogFlag = true;
+      } else {
+        // go to call-dad; keep dog hidden until scene swap completes
+        setTimeout(()=> { drawDogFlag = true; startLevel1_CallDad(); }, 400);
+      }
     }
   }
   if (autoRunIn){
@@ -329,7 +342,6 @@ function level1CallUpdate(dt){
     setTimeout(()=>{ howlGate=false; }, 520);
   }
 
-  // Success → EXCLUSIVE letoutvoice (BGM dips to 10%), then door/rain gag, then Level 2
   if (callDadCount>=4){
     callDadCount=-999;
     playExclusiveVO(sounds.letout, ()=> {
@@ -345,6 +357,8 @@ function level1CallUpdate(dt){
         setTimeout(()=>{
           clearInterval(run);
           try{ sounds.rain.pause(); }catch{}
+          // hide dog for a beat so there’s no corner flicker between scenes
+          drawDogFlag = false;
           startLevel2();
         }, 1500);
       }, 1800);
@@ -375,7 +389,7 @@ function level2Update(dt){
   }
   if (actionCountL2>=8){
     actionCountL2=-999;
-    startFinal(); // show final image now and stay there; play final music
+    startFinal(); // final image + music; text fades in after 3s
   }
 }
 
@@ -383,6 +397,7 @@ function level2Update(dt){
    Render & Loop
 ========================= */
 function drawDog(){
+  if (!drawDogFlag) return;
   if (dog.state==="walk") {
     dog.walkTimer += 1;
     if (dog.walkTimer >= (dog.walkSpeed? (dog.walkSpeed*100):10)) {
@@ -405,13 +420,15 @@ let last = performance.now();
 function loop(now){
   const dt = Math.min(0.033, (now-last)/1000); last = now;
 
-  if (bg) ctx.drawImage(bg, 0, 0, W, H); else { ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H); }
+  // Always fully paint the frame (pre-fill to avoid any “weird top” artefacts)
+  ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+  if (bg) ctx.drawImage(bg, 0, 0, W, H);
 
   if (scene==="splash") { /* splash bg + help card */ }
   else if (scene==="level1_sniff") { drawTreat(); drawDog(); level1SniffUpdate(dt); }
   else if (scene==="level1_call")  { drawDog(); level1CallUpdate(dt); }
   else if (scene==="level2")       { drawDog(); level2Update(dt); }
-  else if (scene==="final")        { /* finalscreen is drawn as bg forever; end text shown */ }
+  else if (scene==="final")        { /* finalscreen drawn as bg; endText fades in */ }
 
   requestAnimationFrame(loop);
 }
@@ -419,7 +436,7 @@ function loop(now){
 /* =========================
    Boot
 ========================= */
-function drawOnce(){ if (bg) ctx.drawImage(bg,0,0,W,H); }
+function drawOnce(){ ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H); if (bg) ctx.drawImage(bg,0,0,W,H); }
 
 loadImages(imageFiles, ()=>{
   scene = "splash";
