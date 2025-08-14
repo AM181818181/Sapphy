@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>V2 Sapphy</title>
+<title>Small Black Dog: Find My Sister</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   :root { --w:1920; --h:1080; }
@@ -82,15 +82,15 @@ const tooltipEl = document.getElementById('tooltip');
 const endTextEl = document.getElementById('endText');
 const splashHelp = document.getElementById('splashHelp');
 
-function showCenter(text, ms=4000) { // longer duration
+function showCenter(text, ms=4000) {
   centerMsg.textContent = text; centerMsg.style.display='block';
   if (ms) setTimeout(()=> centerMsg.style.display='none', ms);
 }
-function showTooltip(text, ms=4000) { // longer duration
+function showTooltip(text, ms=4000) {
   tooltipEl.textContent = text; tooltipEl.style.display='block';
   if (ms) setTimeout(()=> tooltipEl.style.display='none', ms);
 }
-// bubble near dog (longer by default)
+// bubble near dog
 function showDogBubble(text, ms=3500) {
   bubbleDog.textContent = text;
   const r = canvas.getBoundingClientRect();
@@ -137,7 +137,7 @@ const sounds = {
   letout: new Audio(encodeURI("letoutvoice.m4a")),
   rain: new Audio(encodeURI("rain.wav"))
 };
-const MUSIC_BASE = 0.35; // much quieter music
+const MUSIC_BASE = 0.35; // quiet BGM
 sounds.bgm.loop = true; sounds.bgm.volume = MUSIC_BASE;
 sounds.final.loop = false;
 
@@ -162,23 +162,43 @@ let bgmPlaying=false, finalStartMs=0;
 let sniffGate=false, barkGate=false, howlGate=false;
 
 /* =========================
-   Audio Ducking (SFX loud)
+   Audio control + Exclusive SFX
 ========================= */
 function duckBGM(dbDown, ms){
-  const linear = Math.pow(10, dbDown/20); // dB -> linear
+  const linear = Math.pow(10, dbDown/20);
   const target = Math.max(0, Math.min(1, MUSIC_BASE * linear));
   sounds.bgm.volume = target;
   setTimeout(()=> sounds.bgm.volume = MUSIC_BASE, (ms||400));
 }
+let sfxLock = false; // blocks other SFX while true
 function playSfx(snd, duckDb=-4, holdMs=null, volOverride=1.0){
-  if (!snd) return;
+  if (!snd || sfxLock) return;
   try {
-    snd.volume = volOverride; // SFX at 100%
+    snd.volume = volOverride;
     snd.currentTime = 0;
     const ms = holdMs ?? Math.max(220, (snd.duration||0.4)*1000);
     duckBGM(duckDb, ms+380);
     snd.play().catch(()=>{});
   }catch(e){ console.warn("SFX error", e); }
+}
+function playSfxExclusive(snd, after){
+  if (!snd) return;
+  sfxLock = true;
+  // pause everything else (including rain) and BGM
+  try{ sounds.bgm.pause(); }catch{}
+  try{ sounds.rain.pause(); }catch{}
+  for (const k in sounds){
+    if (sounds[k] !== snd && k!=='final' && k!=='bgm'){
+      try{ sounds[k].pause(); }catch{}
+    }
+  }
+  try{
+    snd.volume = 1.0; snd.currentTime = 0; snd.play().catch(()=>{});
+    snd.onended = ()=>{
+      sfxLock = false;
+      if (typeof after === 'function') after();
+    };
+  }catch(e){ sfxLock=false; if (typeof after==='function') after(); }
 }
 function playBGM(){ if(!bgmPlaying){ sounds.bgm.play().then(()=>bgmPlaying=true).catch(()=>{}); } }
 function stopBGM(){ try{ sounds.bgm.pause(); bgmPlaying=false; }catch{} }
@@ -223,7 +243,7 @@ function startLevel2(){
 function startFinal(){
   scene = "final";
   stopBGM();
-  ctx.drawImage(images["finalscreen.png"],0,0,W,H);
+  ctx.drawImage(images["finalscreen.png"],0,0,W,H); // show final image immediately
   try{ sounds.final.currentTime=0; sounds.final.play(); }catch{}
   finalStartMs = performance.now();
 }
@@ -251,7 +271,6 @@ function pickupTreat(){
    Level Updates
 ========================= */
 function level1SniffUpdate(dt){
-  // movement if not auto
   const canMove = !autoSeek && !autoRunOff && !autoRunIn;
   const speed = 280 * dt;
   if (canMove) {
@@ -261,7 +280,7 @@ function level1SniffUpdate(dt){
     dog.x = Math.max(40, Math.min(W-500, dog.x));
   }
   // sniff to spawn treat (3 presses)
-  if (keys['s'] && !sniffGate && canMove){
+  if (!sfxLock && keys['s'] && !sniffGate && canMove){
     sniffGate=true; dog.state="sniff";
     playSfx(Math.random()<0.5?sounds.sniff1:sounds.sniff2, -4, null, 1.0);
     sniffPresses++;
@@ -276,7 +295,7 @@ function level1SniffUpdate(dt){
     dog.x += (300*dt) * dir;
     if ((dir>0 && dog.x >= target) || (dir<0 && dog.x <= target)) { dog.state="sit"; pickupTreat(); }
   }
-  // run off, then run back in (running), then big message
+  // run off, then back in, then big message or go to call-dad
   if (autoRunOff){
     setWalk(true); dog.dir=1; dog.x += (480*dt);
     if (dog.x > W + 120) {
@@ -297,39 +316,48 @@ function level1CallUpdate(dt){
   else if (keys['d']) { dog.x += speed; dog.dir= 1; setWalk(); }
   else if (dog.state==="walk") dog.state="sit";
   dog.x = Math.max(40, Math.min(W-500, dog.x));
-  // Bark/Howl 4 times
-  if (keys['b'] && !barkGate){
+
+  // Bark/Howl 4 times (blocked during exclusive VO)
+  if (!sfxLock && keys['b'] && !barkGate){
     barkGate=true; dog.state="howl";
-    playSfx(sounds.bark, -4, 250, 1.0);
+    playSfx(sounds.bark, -4, 280, 1.0);
     setTimeout(()=> dog.state="sit", 140);
     callDadCount++; if (callDadCount<4) showCenter("I think dad heard that", 1200);
     setTimeout(()=> barkGate=false, 180);
   }
-  if (keys['h'] && !howlGate){
+  if (!sfxLock && keys['h'] && !howlGate){
     howlGate=true; dog.state="howl";
     const h=(Math.random()<0.5)?sounds.howl1:sounds.howl2;
     playSfx(h, -8, 1600, 1.0);
     callDadCount++; if (callDadCount<4) showCenter("I think dad heard that", 1200);
     setTimeout(()=>{ howlGate=false; }, 520);
   }
+
+  // Success → EXCLUSIVE letoutvoice, then door/rain gag, then Level 2
   if (callDadCount>=4){
     callDadCount=-999;
-    playSfx(sounds.letout, -8, 1500, 1.0);
-    setTimeout(()=> playSfx(sounds.dooropen, -6, 1100, 1.0), 420);
-    setTimeout(()=> { bg = images["lvl1dooropen.png"]; }, 760);
-    setTimeout(()=>{
-      try{ sounds.rain.loop=true; sounds.rain.volume=0.9; sounds.rain.currentTime=0; sounds.rain.play(); }catch{}
-      showCenter("Rain, I'm not going out there!", 4000);
-    }, 1100);
-    setTimeout(()=>{
-      setWalk(true); dog.dir=1;
-      const run = setInterval(()=>{ dog.x += 40; }, 16);
+    playSfxExclusive(sounds.letout, ()=> {
+      // After VO finishes (silence guaranteed), continue sequence.
+      // Door open SFX (BGM still paused here)
+      try{ sounds.dooropen.currentTime=0; sounds.dooropen.volume=1.0; sounds.dooropen.play(); }catch{}
+      setTimeout(()=> { bg = images["lvl1dooropen.png"]; }, 300);
       setTimeout(()=>{
-        clearInterval(run);
-        try{ sounds.rain.pause(); }catch{}
-        startLevel2();
-      }, 1500);
-    }, 2200);
+        try{ sounds.rain.loop=true; sounds.rain.volume=0.9; sounds.rain.currentTime=0; sounds.rain.play(); }catch{}
+        showCenter("Rain, I'm not going out there!", 4000);
+        // Resume BGM quietly after the door/rain cue starts
+        setTimeout(()=> playBGM(), 300);
+      }, 600);
+      setTimeout(()=>{
+        // sprint off right
+        setWalk(true); dog.dir=1;
+        const run = setInterval(()=>{ dog.x += 40; }, 16);
+        setTimeout(()=>{
+          clearInterval(run);
+          try{ sounds.rain.pause(); }catch{}
+          startLevel2();
+        }, 1500);
+      }, 1800);
+    });
   }
 }
 
@@ -340,14 +368,14 @@ function level2Update(dt){
   else if (dog.state==="walk") dog.state="sit";
   dog.x = Math.max(40, Math.min(W-500, dog.x));
   // Bark/Howl 8 times
-  if (keys['b'] && !barkGate){
+  if (!sfxLock && keys['b'] && !barkGate){
     barkGate=true; dog.state="howl";
     playSfx(sounds.bark, -4, 280, 1.0);
     setTimeout(()=> dog.state="sit", 140);
-    actionCountL2++; showTooltip(`Keep going… (${actionCountL2}/8)`, 1100);
+    actionCountL2++; showTooltip(`Keep going… (${actionCountL2}/8)`, 1200);
     setTimeout(()=> barkGate=false, 180);
   }
-  if (keys['h'] && !howlGate){
+  if (!sfxLock && keys['h'] && !howlGate){
     howlGate=true; dog.state="howl";
     const h=(Math.random()<0.5)?sounds.howl1:sounds.howl2;
     playSfx(h, -8, 1600, 1.0);
@@ -356,8 +384,8 @@ function level2Update(dt){
   }
   if (actionCountL2>=8){
     actionCountL2=-999;
-    setTimeout(()=> playSfx(sounds.dooropen, -6, 1000, 1.0), 240);
-    setTimeout(()=> startFinal(), 600);
+    // Immediately show final screen + start final music
+    startFinal();
   }
 }
 
@@ -432,7 +460,9 @@ loadImages(imageFiles, ()=>{
   window.addEventListener('keydown', e=>{
     if (e.code === "Space" && scene === "splash") {
       splashHelp.style.display = "none";
-      playBGM(); // user gesture → allow audio
+      // start quiet BGM (user gesture → allowed)
+      sounds.bgm.currentTime = 0; playBGM();
+      // show intro video (muted) then Level 1
       const introWrap = document.getElementById('introWrap');
       const introVid  = document.getElementById('introVid');
       introWrap.style.display = "grid";
