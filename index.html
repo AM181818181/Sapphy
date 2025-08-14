@@ -8,38 +8,33 @@
   :root { --w:1920; --h:1080; }
   html, body { margin:0; height:100%; background:#000; }
   /* Center the game and scale it to fit the window (no cropping) */
-  #stage {
-    position: fixed; inset: 0;
-    display: grid; place-items: center;
-    background:#000;
-  }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; background:#000; }
   canvas { width: var(--w)px; height: var(--h)px; background:#000; display:block; }
+
   /* Overlays */
   .ui {
     position: fixed; left:50%; transform:translateX(-50%);
     font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    color:#fff; text-shadow: 2px 2px 2px rgba(0,0,0,.8);
-    pointer-events:none; max-width: 80vw;
+    color:#fff; text-shadow: 2px 2px 2px rgba(0,0,0,.85);
+    pointer-events:none; max-width: 85vw;
   }
-  #bubble { top:10%; background:rgba(0,0,0,.45); padding:8px 12px; border-radius:10px; font-size:24px; display:none; }
+  #bubbleDog { position: fixed; display:none; font-size:24px; background:rgba(0,0,0,.45);
+               padding:8px 12px; border-radius:10px; }
+  #centerMsg { top: 48%; transform: translate(-50%,-50%); font-size: 46px; font-weight: 700;
+               text-align:center; display:none; }
   #tooltip { bottom:5%; background:rgba(0,0,0,.7); padding:8px 12px; border-radius:10px; font-size:20px; display:none; }
   #endText { top:50%; transform:translate(-50%,-50%); font-size:48px; opacity:0; transition:opacity 2s; }
+
   /* Splash instructions */
-  #splashHelp {
-    position: fixed; inset: 0; display:none; place-items:end center; padding:2rem;
-    font: 18px system-ui; color:#fff; text-align:center; background: none; pointer-events:none;
-    text-shadow: 2px 2px 2px rgba(0,0,0,.8);
-  }
+  #splashHelp { position: fixed; inset: 0; display:none; place-items:end center; padding:2rem; }
   #splashHelp .card{
-    background: rgba(0,0,0,.55); padding:12px 16px; border-radius:12px; line-height:1.45;
+    background: rgba(0,0,0,.55); padding:14px 18px; border-radius:12px; line-height:1.45;
+    font: 18px system-ui; color:#fff; text-align:center;
   }
+
   /* Intro video overlay (muted, auto-plays after SPACE) */
-  #introWrap {
-    position: fixed; inset:0; display:none; place-items:center; background:#000;
-  }
-  #introWrap video {
-    max-width: 100vw; max-height: 100vh; outline: none; border:none;
-  }
+  #introWrap { position: fixed; inset:0; display:none; place-items:center; background:#000; }
+  #introWrap video { max-width: 100vw; max-height: 100vh; outline: none; border:none; }
 </style>
 </head>
 <body>
@@ -48,18 +43,19 @@
 </div>
 
 <!-- UI overlays -->
-<div id="bubble" class="ui"></div>
+<div id="bubbleDog" class="ui"></div>
+<div id="centerMsg" class="ui"></div>
 <div id="tooltip" class="ui"></div>
 <div id="endText" class="ui">No more howling for Sapphy</div>
 <div id="splashHelp">
   <div class="card">
-    <div style="font-size:22px;margin-bottom:6px;">Controls</div>
-    <div><b>A / D</b> — Move • <b>S</b> — Sniff • <b>B</b> — Bark • <b>H</b> — Howl</div>
-    <div style="opacity:.85;margin-top:6px;">Press <b>SPACE</b> to start</div>
+    <div style="font-size:24px;margin-bottom:8px;">Small Black Dog: Find My Sister</div>
+    <div style="margin-bottom:6px;"><b>A / D</b> — Move • <b>S</b> — Sniff • <b>B</b> — Bark • <b>H</b> — Howl</div>
+    <div style="opacity:.9;">Press <b>SPACE</b> to start</div>
   </div>
 </div>
 
-<!-- Intro video (plays after SPACE, then fades to Level 1). Muted so it will auto-play reliably. -->
+<!-- Intro video -->
 <div id="introWrap">
   <video id="introVid" src="introvideo.mp4" poster="splashscreen.png" playsinline muted></video>
 </div>
@@ -85,18 +81,31 @@ fit();
 /* =========================
    UI helpers
 ========================= */
-const bubbleEl = document.getElementById('bubble');
+const bubbleDog = document.getElementById('bubbleDog');
+const centerMsg = document.getElementById('centerMsg');
 const tooltipEl = document.getElementById('tooltip');
 const endTextEl = document.getElementById('endText');
 const splashHelp = document.getElementById('splashHelp');
 
-function showBubble(text, ms=2000) {
-  bubbleEl.textContent = text; bubbleEl.style.display='block';
-  if (ms) setTimeout(()=> bubbleEl.style.display='none', ms);
+function showCenter(text, ms=2000) {
+  centerMsg.textContent = text; centerMsg.style.display='block';
+  if (ms) setTimeout(()=> centerMsg.style.display='none', ms);
 }
 function showTooltip(text, ms=2000) {
   tooltipEl.textContent = text; tooltipEl.style.display='block';
   if (ms) setTimeout(()=> tooltipEl.style.display='none', ms);
+}
+// place bubble near dog
+function showDogBubble(text, ms=1800) {
+  bubbleDog.textContent = text;
+  const r = canvas.getBoundingClientRect();
+  const px = r.left + (dog.x + dog.w*0.5) * (r.width / W);
+  const py = r.top + (dog.y - 30) * (r.height / H);
+  bubbleDog.style.left = px + 'px';
+  bubbleDog.style.top  = (py) + 'px';
+  bubbleDog.style.transform = 'translate(-50%,-100%)';
+  bubbleDog.style.display='block';
+  if (ms) setTimeout(()=> bubbleDog.style.display='none', ms);
 }
 
 /* =========================
@@ -128,7 +137,7 @@ const sounds = {
   howl2: new Audio(encodeURI("howl2.m4a")),
   pickup: new Audio(encodeURI("treatpickup.m4a")),
   dooropen: new Audio(encodeURI("dooropen.wav")),
-  knock: new Audio(encodeURI("door knock.wav")),
+  knock: new Audio(encodeURI("door knock.wav")), // not used in this version
   letout: new Audio(encodeURI("letoutvoice.m4a")),
   rain: new Audio(encodeURI("rain.wav"))
 };
@@ -151,19 +160,22 @@ let bg = null;
 const dog = {
   x: 220, y: 680, w: 450, h: 400,
   state: "sit", dir: 1,
-  walkFrame: 0, walkTimer: 0
+  walkFrame: 0, walkTimer: 0, walkSpeed: 0.1
 };
 
 let treatActive = false;
-let treatX = 1200, treatY = 770, treatImg = "treat1.png";
+let treatX = 1200, treatY = 820, treatImg = "treat1.png";
 let sniffPresses = 0;
-let treatsCollected = 0;           // need 2–3 loops; we'll do 3
-let autoSeek = false;              // move to treat
+let loopsDone = 0;                 // treat loops (2–3); we’ll do 3
+let autoSeek = false;              // walk to treat
 let autoRunOff = false;            // run to right edge
-let actionCount = 0;               // level 2 sniff+bark counter
-let level2ReadyForKnock = false;
+let autoRunIn = false;             // run in from left
+let callDadCount = 0;              // L1: bark+howl required
+let actionCountL2 = 0;             // L2: bark+howl required (7–8); we’ll do 8
 let bgmPlaying = false;
 let finalStartMs = 0;
+
+let sniffGate=false, barkGate=false, howlGate=false;
 
 /* =========================
    Audio Ducking
@@ -172,13 +184,13 @@ const MUSIC_BASE = 0.7;
 function duckBGM(dbDown, ms){
   const linear = Math.pow(10, dbDown/20); // dB -> linear
   const target = Math.max(0, Math.min(1, MUSIC_BASE * linear));
-  const prev = sounds.bgm.volume;
   sounds.bgm.volume = target;
   setTimeout(()=> sounds.bgm.volume = MUSIC_BASE, (ms||350));
 }
-function playSfx(snd, duckDb=-4, holdMs=null){
+function playSfx(snd, duckDb=-4, holdMs=null, volOverride=null){
   if (!snd) return;
   try {
+    if (volOverride!==null) snd.volume = volOverride;
     snd.currentTime = 0;
     const ms = holdMs ?? Math.max(200, (snd.duration||0.35)*1000);
     duckBGM(duckDb, ms+350);
@@ -202,14 +214,13 @@ function startSplash(){
   scene = "splash";
   bg = images["splashscreen.png"];
   splashHelp.style.display = "grid";
-  draw(); // draw splash
+  draw();
 }
 
 function startIntroVideo(){
-  // Play muted so it will auto-play; keep BGM running underneath
   introWrap.style.display = "grid";
   introVid.currentTime = 0;
-  introVid.play().catch(()=>{ /* if blocked, user can click video to play */ });
+  introVid.play().catch(()=>{});
   introVid.onended = ()=>{
     introWrap.style.display = "none";
     startLevel1();
@@ -217,22 +228,30 @@ function startIntroVideo(){
 }
 
 function startLevel1(){
-  scene = "level1";
+  scene = "level1_sniff";
   bg = images["lvl1.png"];
-  dog.x = 220; dog.y = 680; dog.state="sit"; dog.dir=1;
-  treatActive = false; autoSeek = false; autoRunOff = false;
-  sniffPresses = 0; treatsCollected = 0;
-  showBubble("I can smell something good!", 1800);
-  showTooltip("Press S to sniff", 2200);
+  Object.assign(dog, { x: 220, y: 680, state:"sit", dir:1, walkFrame:0, walkTimer:0 });
+  treatActive = autoSeek = autoRunOff = autoRunIn = false;
+  sniffPresses = 0; loopsDone = 0; callDadCount = 0;
+  showCenter("I can smell something good!", 1600);
+  showCenter("Press S to sniff for more treats", 2400);
+}
+
+function startLevel1_CallDad(){
+  scene = "level1_call";
+  callDadCount = 0;
+  showCenter("Sapphy wants to go outside", 2200);
+  showTooltip("Bark (B) or Howl (H) a few times", 2600);
 }
 
 function startLevel2(){
   scene = "level2";
   bg = images["lvl2.png"];
   try{ sounds.rain.pause(); }catch{}
-  dog.x = 220; dog.y = 680; dog.state="sit"; dog.dir=1;
-  actionCount = 0; level2ReadyForKnock = true;
-  showTooltip("Sniff (S) or Bark (B) to get their attention", 2600);
+  Object.assign(dog, { x: 220, y: 680, state:"sit", dir:1, walkFrame:0, walkTimer:0 });
+  actionCountL2 = 0;
+  showCenter("Where is my favourite person, I should bark!", 2600);
+  showTooltip("Bark (B) or Howl (H) 8 times", 3000);
 }
 
 function startFinal(){
@@ -244,40 +263,46 @@ function startFinal(){
 }
 
 /* =========================
-   Level 1 Logic
+   Treat Flow Helpers
 ========================= */
-let sniffGate=false, barkGate=false, howlGate=false;
-
-function spawnTreat(){
-  // randomize treat and position on the floor
-  treatImg = Math.random()<0.5 ? "treat1.png" : "treat2.png";
-  treatX = Math.floor(400 + Math.random() * 900); // somewhere ahead
-  treatY = 820; // floor level
-  treatActive = true;
-  autoSeek = true; // dog will walk to it
+function setWalk(fast=false){
+  if (dog.state!=="walk") { dog.state="walk"; dog.walkFrame=0; dog.walkTimer=0; }
+  dog.walkSpeed = fast ? 0.06 : 0.1; // lower = faster cycle
 }
-
+function spawnTreatAwayFromDog(){
+  // spawn 300–700px to the right (clamped), different image alternative
+  treatImg = Math.random()<0.5 ? "treat1.png" : "treat2.png";
+  const minOffset = 300, maxOffset = 700;
+  let x = dog.x + (minOffset + Math.random()*(maxOffset-minOffset));
+  x = Math.max(380, Math.min(W-500, x));
+  treatX = Math.floor(x);
+  treatY = 820;
+  treatActive = true;
+  autoSeek = true;
+}
 function pickupTreat(){
   treatActive = false;
   autoSeek = false;
   playSfx(sounds.pickup, -4);
-  // start running off-screen, THEN trigger bubble after she's moving
-  autoRunOff = true;
-  setTimeout(()=> showBubble("I'll save this for later.", 1800), 250);
+  autoRunOff = true;                    // start running off
+  setTimeout(()=> showDogBubble("I'll save this for later.", 1600), 220);
 }
 
-function level1Update(dt){
-  // player movement (disabled during autoSeek/autoRunOff)
-  const canMove = !autoSeek && !autoRunOff;
+/* =========================
+   Level Updates
+========================= */
+function level1SniffUpdate(dt){
+  // movement
+  const canMove = !autoSeek && !autoRunOff && !autoRunIn;
+  const speed = 280 * dt;
   if (canMove) {
-    const speed = 280 * dt;
     if (keys['a']) { dog.x -= speed; dog.dir = -1; setWalk(); }
     else if (keys['d']) { dog.x += speed; dog.dir = 1; setWalk(); }
     else if (dog.state==="walk") dog.state="sit";
     dog.x = Math.max(40, Math.min(W-500, dog.x));
   }
 
-  // sniff input (counts to 3 to spawn treat)
+  // sniff input (3 presses → treat spawns away from dog)
   if (keys['s'] && !sniffGate && canMove){
     sniffGate=true;
     dog.state="sniff";
@@ -286,135 +311,131 @@ function level1Update(dt){
     setTimeout(()=>{ sniffGate=false; dog.state="sit"; }, 220);
     if (sniffPresses>=3 && !treatActive) {
       sniffPresses = 0;
-      spawnTreat();
+      spawnTreatAwayFromDog();
     }
   }
 
-  // auto seek: walk to treat until overlap
+  // auto seek to treat
   if (autoSeek && treatActive){
-    const target = treatX - 80; // stop a bit before the treat center
+    const target = treatX - 80;
     const dir = (dog.x < target) ? 1 : -1;
-    dog.dir = dir;
-    setWalk();
-    const speed = 300 * dt;
-    dog.x += speed * dir;
+    dog.dir = dir; setWalk();
+    dog.x += (300*dt) * dir;
     if ((dir>0 && dog.x >= target) || (dir<0 && dog.x <= target)) {
       dog.state="sit";
-      // "collide" with treat
       pickupTreat();
     }
   }
 
-  // after pickup: run to the right edge, then return & reset or go to door
+  // run off right, then run back in from left (running, not sitting), and show big prompt
   if (autoRunOff){
-    setWalk(true); // faster walk
-    dog.dir = 1;
-    dog.x += (460 * dt);
-    if (dog.x > W + 100) {
+    setWalk(true); dog.dir = 1; dog.x += (480*dt);
+    if (dog.x > W + 120) {
       autoRunOff = false;
-      treatsCollected++;
-      if (treatsCollected < 3) {
-        // return from left and prompt next sniff loop
-        dog.x = -200;
-        const slideIn = setInterval(()=>{ dog.x += 40; }, 16);
-        setTimeout(()=>clearInterval(slideIn), 800);
-        setTimeout(()=>{
-          showBubble("I can smell something good!", 1600);
-          showTooltip("Press S to sniff", 2000);
-        }, 500);
+      loopsDone++;
+      if (loopsDone < 3) {
+        // run back in from the left
+        dog.x = -260; dog.dir = 1; autoRunIn = true; setWalk(true);
       } else {
-        // ready for the door
-        showTooltip("Press H to howl", 2600);
+        // move to call-dad phase
+        setTimeout(()=> startLevel1_CallDad(), 350);
       }
     }
   }
-
-  // door sequence
-  if (treatsCollected>=3 && keys['h'] && !howlGate){
-    howlGate = true;
-    dog.state="howl";
-    const howl = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
-    playSfx(howl, -8, 1600);
-    setTimeout(()=> playSfx(sounds.letout, -8, 1100), 400);
-    setTimeout(()=>{
-      playSfx(sounds.dooropen, -6, 1000);
-      bg = images["lvl1dooropen.png"];
-    }, 800);
-    setTimeout(()=>{
-      try{ sounds.rain.loop=true; sounds.rain.volume=0.8; sounds.rain.currentTime=0; sounds.rain.play(); }catch{}
-      showBubble("It's raining out there... I'm not going out there.", 2000);
-    }, 1200);
-    setTimeout(()=>{
-      // slide off to the right, then load Level 2; stop rain on transition
-      const slide = setInterval(()=>{ dog.x += 40; }, 16);
-      setTimeout(()=>{
-        clearInterval(slide);
-        try{ sounds.rain.pause(); }catch{}
-        startLevel2();
-        howlGate=false; dog.state="sit";
-      }, 1100);
-    }, 2000);
+  if (autoRunIn){
+    dog.x += (520*dt);
+    if (dog.x >= 220) {
+      autoRunIn = false; dog.state="sit";
+      showCenter("Press S to sniff for more treats", 2200);
+    }
   }
 }
 
-function setWalk(fast=false){
-  if (dog.state!=="walk") { dog.state="walk"; dog.walkFrame=0; dog.walkTimer=0; }
-  dog.walkSpeed = fast ? 0.06 : 0.1; // lower = faster cycle
-}
-
-/* =========================
-   Level 2 Logic
-========================= */
-function level2Update(dt){
-  // Player can still move around
+function level1CallUpdate(dt){
+  // movement allowed
   const speed = 280 * dt;
   if (keys['a']) { dog.x -= speed; dog.dir=-1; setWalk(); }
   else if (keys['d']) { dog.x += speed; dog.dir= 1; setWalk(); }
   else if (dog.state==="walk") dog.state="sit";
   dog.x = Math.max(40, Math.min(W-500, dog.x));
 
-  // Sniff & Bark actions count toward the knock
-  if (keys['s'] && !sniffGate){
-    sniffGate=true;
-    dog.state="sniff";
-    playSfx(Math.random()<0.5 ? sounds.sniff1 : sounds.sniff2, -4);
-    actionCount++;
-    setTimeout(()=>{ sniffGate=false; dog.state="sit"; }, 220);
-  }
+  // Bark / Howl a few times (need 4 total)
   if (keys['b'] && !barkGate){
     barkGate=true;
-    dog.state="howl"; // quick flicker to simulate bark
+    dog.state="howl";
     playSfx(sounds.bark, -4, 250);
     setTimeout(()=> dog.state="sit", 120);
-    actionCount++;
+    callDadCount++;
+    if (callDadCount<4) showCenter("I think dad heard that", 1000);
     setTimeout(()=> barkGate=false, 160);
   }
+  if (keys['h'] && !howlGate){
+    howlGate=true;
+    dog.state="howl";
+    const h = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
+    playSfx(h, -8, 1600);
+    callDadCount++;
+    if (callDadCount<4) showCenter("I think dad heard that", 1000);
+    setTimeout(()=> { howlGate=false; }, 500);
+  }
 
-  if (level2ReadyForKnock && actionCount>=5){
-    level2ReadyForKnock = false;
-    playSfx(sounds.knock, -6, 1000);
-    showBubble("Someone's at the door!", 2000);
-    showTooltip("It's my favourite person! Press H to howl", 2600);
-    scene = "level2_knock";
+  if (callDadCount>=4){
+    // success sequence: loud let-out voice, door open, bg swap, rain, big text, run off to Level 2
+    callDadCount = -999; // prevent repeats
+    // voice (louder)
+    playSfx(sounds.letout, -8, 1400, 1.0);
+    setTimeout(()=> playSfx(sounds.dooropen, -6, 1000), 400);
+    setTimeout(()=> { bg = images["lvl1dooropen.png"]; }, 700);
+    setTimeout(()=>{
+      try{ sounds.rain.loop=true; sounds.rain.volume=0.8; sounds.rain.currentTime=0; sounds.rain.play(); }catch{}
+      showCenter("Rain, I'm not going out there!", 2200);
+    }, 1000);
+    setTimeout(()=>{
+      // sprint off right
+      setWalk(true); dog.dir=1;
+      const run = setInterval(()=>{ dog.x += 40; }, 16);
+      setTimeout(()=>{
+        clearInterval(run);
+        try{ sounds.rain.pause(); }catch{}
+        startLevel2();
+      }, 1300);
+    }, 2200);
   }
 }
 
-function level2KnockUpdate(dt){
-  // Movement allowed
+function level2Update(dt){
+  // movement
   const speed = 280 * dt;
   if (keys['a']) { dog.x -= speed; dog.dir=-1; setWalk(); }
   else if (keys['d']) { dog.x += speed; dog.dir= 1; setWalk(); }
   else if (dog.state==="walk") dog.state="sit";
   dog.x = Math.max(40, Math.min(W-500, dog.x));
 
+  // Bark / Howl 8 times total
+  if (keys['b'] && !barkGate){
+    barkGate=true;
+    dog.state="howl";
+    playSfx(sounds.bark, -4, 250);
+    setTimeout(()=> dog.state="sit", 120);
+    actionCountL2++;
+    showTooltip(`Keep going… (${actionCountL2}/8)`, 900);
+    setTimeout(()=> barkGate=false, 160);
+  }
   if (keys['h'] && !howlGate){
-    howlGate = true;
-    dog.state = "howl";
-    const howl = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
-    playSfx(howl, -8, 1600);
-    // Optional door open cue again
-    setTimeout(()=> playSfx(sounds.dooropen, -6, 900), 400);
-    setTimeout(()=> startFinal(), 600);
+    howlGate=true;
+    dog.state="howl";
+    const h = (Math.random()<0.5)? sounds.howl1 : sounds.howl2;
+    playSfx(h, -8, 1600);
+    actionCountL2++;
+    showTooltip(`Keep going… (${actionCountL2}/8)`, 1000);
+    setTimeout(()=> { howlGate=false; }, 500);
+  }
+
+  if (actionCountL2>=8){
+    actionCountL2 = -999;
+    // optional door cue again
+    setTimeout(()=> playSfx(sounds.dooropen, -6, 900), 200);
+    setTimeout(()=> startFinal(), 500);
   }
 }
 
@@ -452,7 +473,6 @@ function drawDog(){
   if (dog.state==="howl") sprite = images["howl.png"];
 
   ctx.save();
-  // flip if dir==-1
   if (dog.dir<0){
     ctx.translate(dog.x + dog.w/2, 0);
     ctx.scale(-1,1);
@@ -481,23 +501,18 @@ function loop(now){
 
   // scene updates + draws
   if (scene==="splash") {
-    // splash drawn as bg (splashscreen.png), help card visible
+    // drawn as bg; help card visible
   }
-  else if (scene==="level1") {
-    drawTreat();
-    drawDog();
-    level1Update(dt);
+  else if (scene==="level1_sniff") {
+    drawTreat(); drawDog(); level1SniffUpdate(dt);
+  }
+  else if (scene==="level1_call") {
+    drawDog(); level1CallUpdate(dt);
   }
   else if (scene==="level2") {
-    drawDog();
-    level2Update(dt);
-  }
-  else if (scene==="level2_knock") {
-    drawDog();
-    level2KnockUpdate(dt);
+    drawDog(); level2Update(dt);
   }
   else if (scene==="final") {
-    // finalscreen drawn when scene starts; just run fades
     finalUpdate();
   }
 
@@ -507,21 +522,21 @@ function loop(now){
 /* =========================
    Boot
 ========================= */
+const introWrap = document.getElementById('introWrap');
+const introVid  = document.getElementById('introVid');
+
 loadImages(imageFiles, ()=>{
   // show splash
   scene = "splash";
   bg = images["splashscreen.png"];
   splashHelp.style.display = "grid";
-  draw(); // first draw
-  requestAnimationFrame(loop);
+  draw(); requestAnimationFrame(loop);
 
-  // SPACE starts: play BGM, start intro video, then Level 1
+  // SPACE starts: play BGM, play intro video, then Level 1
   window.addEventListener('keydown', e=>{
     if (e.code === "Space" && scene === "splash") {
       splashHelp.style.display = "none";
-      // start BGM (user gesture)
       playBGM();
-      // play intro video, then go to level 1
       startIntroVideo();
       scene = "intro";
     }
